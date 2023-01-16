@@ -84,10 +84,7 @@ int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *
     return quiche_config_load_cert_chain_from_pem_file(tc_ctx->quic_config, path);
 }
 
-int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *path){
-
-    return quiche_config_load_priv_key_from_pem_file(tc_ctx->quic_config, path);
-}
+ 
 int dtp_tc_config_enable_dgram(dtp_tc_ctx * tc_ctx,bool enabled,size_t recv_queue_len,size_t send_queue_len){
     
     quiche_config_enable_dgram(tc_ctx->quic_config, enabled, recv_queue_len,send_queue_len);

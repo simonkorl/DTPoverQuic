@@ -8,7 +8,7 @@ extern "C" {
 #include "quiche.h"
 #include "uthash.h"
 #include "dtp_internal.h"
- 
+#include "dtp_structure.h"
  
  
 #define DTPL_PORT 853
@@ -17,23 +17,10 @@ extern "C" {
 #define DTPL_ERROR_INTERNAL 0x01
 #define DTPL_ERROR_PROTOCOL 0x02
 
-typedef enum {
-    stream = 1,
-    gram = 2,
-} dtp_trans_mode;
-
-//todo multiple connection situation
-//{conn:bmap}
-typedef struct blockmap{
-    uint64_t id;
-    block block;
-
-    UT_hash_handle hh;    
-
-}bmap;
+ 
 typedef enum {
    dropExpiredMode=2,
-    resendmode=3
+    resendmode=3,
 
 
 } dtplayerScheMo;
@@ -72,7 +59,7 @@ uint64_t dtp_conn_get_feedback(dtp_tc_ctx * tc_ctx,uint8_t * feedback);
 
 int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *path);
 
-int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *path);
+ 
 int dtp_tc_config_enable_dgram(dtp_tc_ctx * tc_ctx,bool enabled,size_t recv_queue_len,size_t send_queue_len);
 
 uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx);

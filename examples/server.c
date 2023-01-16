@@ -24,6 +24,8 @@
 #include <time.h>
 
 #include "dtplayer.h"
+#include "dtp_structure.h"
+
 /***** Argp configs *****/
 
 const char *argp_program_version = "dtptest-server 0.1";
@@ -389,11 +391,7 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
                                                         conn_io->cfgs[conn_io->send_round].size, 
                                                         conn_io->cfgs[conn_io->send_round].priority, 
                                                           conn_io->cfgs[conn_io->send_round].deadline,1);
-
  
-    
-    uint8_t  judge[]=outs;
-     printf("%p %p %ld as well as %ld but array %ld\n",outs,judge );
     
 
     
@@ -564,7 +562,7 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
 
        static uint8_t block_buf[MAX_BLOCK_SIZE];
       dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
-
+      
      for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++){
         uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
      log_debug("Dgram offset = %lu",offstart);
@@ -572,7 +570,9 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
       printf("%c",block_buf[offstart+i]);
     
   }
-
+    dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
+  dtp_tc_control_flow_send(conn_io->dtp_ctx,block_buf,sizeof(block_buf),false);
+  
       while (quiche_stream_iter_next(readable, &s)) {
         log_debug("stream %" PRIu64 " is readable", s);
 

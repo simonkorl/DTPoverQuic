@@ -29,7 +29,7 @@
 #include "dtplayer.h"
 #include "dtp_internal.h"
 #include "dtp_assemb.h"
-
+#include "dtp_structure.h"
 
 //usage:
 /*
@@ -104,7 +104,7 @@ int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
             tc_ctx->control_stream_id=8;
             tc_ctx->transport_mode=0;
 
-            tc_ctx->dtpctx=dtp_ctx;
+           
             dtp_ctx->tc_ctx = tc_ctx;
             
         }
@@ -281,11 +281,11 @@ int dtp_tc_conn_validate(dtp_tc_ctx * tc_ctx,uint8_t * buf,struct sockaddr_stora
 } 
 //send the feeback of current network
 //lost pkt
-void dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,uint8_t * buf,size_t buflen,bool final_flow_data){
-
-  dtp_layers_ctx * dtp_ctx=tc_ctx->dtpctx;
+void dtp_tc_control_flow_send(dtp_layers_ctx * dtp_ctx,uint8_t * buf,size_t buflen,bool final_flow_data){
+  dtp_tc_ctx * tc_ctx=dtp_ctx->tc_ctx;
+//  dtp_layers_ctx * dtp_ctx=tc_ctx->dtpctx;
   
-  static uint8_t buf[MAX_BLOCK_SIZE];
+   
   memcpy(buf,&(dtp_ctx->avrRTT),sizeof((dtp_ctx->avrRTT)));
 
   if (quiche_conn_is_established(tc_ctx->quic_conn)){
@@ -303,34 +303,35 @@ void dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,uint8_t * buf,size_t buflen,bo
 
 }
 
-//Check if there is feedback data from control stream
+//Check and Read the feedback data from peer .
 void dtp_tc_control_flow_check(dtp_tc_ctx * tc_ctx){
  
   static uint8_t buf[MAX_BLOCK_SIZE];
   memset(buf, 0, MAX_BLOCK_SIZE);
-  uint64_t s = 0;
-  quiche_stream_iter *readable = quiche_conn_readable(tc_ctx->quic_conn);
+  uint64_t s = tc_ctx->control_stream_id;
+  //quiche_stream_iter *readable = quiche_conn_readable(tc_ctx->quic_conn);
 
-  while (quiche_stream_iter_next(readable, &s)) {
+  if(quiche_conn_stream_readable(tc_ctx->quic_conn,s)) {
         
-
+    
         bool fin = false;
         ssize_t recv_len =
             quiche_conn_stream_recv(tc_ctx->quic_conn, s, buf, sizeof(buf), &fin);
         if (recv_len > 0){
           uint64_t p_rtt;
           memcpy(&p_rtt,buf,sizeof(p_rtt));
-          tc_ctx->dtpctx->peer_RTT=p_rtt;
+          tc_ctx->peer_RTT=p_rtt;
 
           log_debug("Control stream: dgram RTT :%" PRIu64 "  ", p_rtt);
         }
         else
-          break;
+          log_debug("Failed to get data from control stream");
+         
         
       }
   //todo:deal with the buf
   //read the control messag
-      quiche_stream_iter_free(readable);
+     // quiche_stream_iter_free(readable);
 
 
 }
@@ -359,20 +360,10 @@ ssize_t dtp_conn_send(dtp_tc_ctx *tc_ctx, uint8_t *out,size_t out_len){
 
 
 
-//select a block from the pool and send via datagram
-ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
-
-  uint64_t id=dtp_schedule_block( dtp_ctx);
-  block * aim_block= find_bmap(dtp_ctx->block_pool,id);
-  if( aim_block==NULL)
-    return -1;
-  return dtpl_tc_conn_block_send(dtp_ctx, aim_block);
-}
-
 //send some block
 ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
 
-    const int MAX_DGRAM_SIZE=1350;
+    
 
     if (block==NULL)
         return DTP_ERR_NULL_PTR;
@@ -380,7 +371,7 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
     uint64_t id=block->id;
     uint64_t size=block->size;
 
-    static uint8_t out[MAX_DGRAM_SIZE]={0};
+    static uint8_t out[MAX_DGRAM_SIZE];
     memset(out,0,MAX_DGRAM_SIZE);
     uint64_t bandwidth=0;
     ssize_t sent=0;
@@ -392,7 +383,7 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
     size_t dgram_payloadlen=MAX_DGRAM_SIZE-dgram_hdrlen;
 
     size_t dgram_num=size/dgram_payloadlen;
-    size_t dgram_num=((size%dgram_payloadlen==0)?(dgram_num):(dgram_num+1))+1;
+    dgram_num=((size%dgram_payloadlen==0)?(dgram_num):(dgram_num+1))+1;
     //divided into grams and send.
     //todo:dgram_size variables in ctx
     size_t dg_counter=0;
@@ -468,6 +459,20 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
 //process the imcoming socket buf;
 
 
+
+//select a block from the pool and send via datagram
+ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
+
+  uint64_t id=dtp_schedule_block( dtp_ctx);
+  block * aim_block= find_bmap(dtp_ctx->block_pool,id);
+  if( aim_block==NULL)
+    return -1;
+  return dtpl_tc_conn_block_send(dtp_ctx, aim_block);
+}
+
+
+
+
 //bool quiche_conn_is_closed(quiche_conn *conn);
 bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx){
 
@@ -496,7 +501,7 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
     }
     dtp_tc_ctx * tc_ctx=dtp_ctx->tc_ctx;
     
-    const int MAX_DGRAM_SIZE=1350;
+    
     uint64_t total_bytes=0;
     int32_t recv_len=0;
     static uint8_t recv_buf[MAX_DGRAM_SIZE];
@@ -511,14 +516,14 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
     uint64_t deadline=0;
     uint64_t size=0;
 
-    ssize_t recv_len=1;
+     recv_len=1;
     uint32_t off_ind=0;
     memset(tc_ctx->offset_arrived,0,tc_ctx->off_array_num);
-    offsetsize_t offset;
+ 
     static uint64_t sent_time;
     static uint64_t id=0;
     uint64_t RTT_gap=0;
-    static uint64_t offset=0;
+    offsetsize_t offset=0;
 
     tc_ctx->recv_dgram_num=0;
  

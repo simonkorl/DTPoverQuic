@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <sys/time.h>
-
+#include <stdlib.h>
 __uint64_t get_current_usec() {
   struct timeval tv;
   gettimeofday(&tv, NULL);

@@ -47,7 +47,7 @@ int  dtp_assembler_init(dtp_layers_ctx* dtp_ctx,info_assemble_mode mode)
               assemlay_ctx->historyArray=(rbinfoptr)malloc((assemlay_ctx->historyLen)*sizeof(r_binfo));
               assemlay_ctx->historyCurIndex=0;
               assemlay_ctx->hisCount=0;
-              assemlay_ctx->dtpctx=dtp_ctx;
+            //  assemlay_ctx->dtpctx=dtp_ctx;
               assemlay_ctx->mode=mode;
             
               dtp_ctx->assemlay_ctx = assemlay_ctx;

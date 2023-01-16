@@ -24,7 +24,7 @@
 #include <time.h>
 
 #include "dtplayer.h"
-
+#include "dtp_structure.h"
 /***** Argp configs *****/
 
 const char *argp_program_version = "dtptest-client 0.1";
@@ -318,6 +318,9 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
     
   }
 
+   dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
+
+   dtp_tc_control_flow_send(conn_io->dtp_ctx, buf, sizeof(buf),true);
   
     uint64_t s = 0;
     quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);

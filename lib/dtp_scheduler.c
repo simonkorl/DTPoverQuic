@@ -37,7 +37,7 @@ int dtp_scheduler_init(dtp_layers_ctx* dtp_ctx, dtp_trans_mode transport_mode)
   
             memset(schelay_ctx, 0, sizeof( dtp_sctx)); 
             schelay_ctx->transport_mode = transport_mode;
-            schelay_ctx->dtpctx=dtp_ctx;
+         //   schelay_ctx->dtpctx=dtp_ctx;
         //block in que init
        //     block_t_link * head=(block_t_link *)malloc(sizeof(block_t_link));
          //   head->next = head;
@@ -107,8 +107,12 @@ uint64_t dtp_schedule_block(dtp_layers_ctx* dtp_ctx){
     bmap * iter,*tmp;
     uint64_t ret=0;
     uint64_t nxtP=0;
-
-    uint64_t nextID_priority=dtplScheCalReaPri(sche_ctx, dtp_ctx,sche_ctx->nxtID);
+    uint64_t nextID_priority;
+    int pri=dtplScheCalReaPri(sche_ctx, dtp_ctx,sche_ctx->nxtID);
+    if(pri<0)
+        nextID_priority=0;
+    else
+        nextID_priority=pri;
     HASH_ITER(hh, blocks, iter, tmp) {
          int real=dtplScheCalReaPri(sche_ctx, dtp_ctx,iter->block.id);
          if(real!=-1&&real>nextID_priority){

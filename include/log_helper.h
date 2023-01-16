@@ -1,11 +1,23 @@
+#ifndef LOG_HELPER_H
+#define LOG_HELPER_H
+
 #define ERROR 0
 #define WARN 1
 #define INFO 2
 #define DEBUG 3
 #define TRACE 4
 
+
+
+
+
 static int LOG_LEVEL = 3;
+
+
 static int LOG_COLOR = 0;
+
+
+
 
 #define HELPER_LOG stdout
 #define HELPER_OUT stdout
@@ -80,3 +92,5 @@ static int LOG_COLOR = 0;
     log(INFO, __VA_ARGS__);                                                    \
   }                                                                            \
   fflush(NULL);
+
+#endif

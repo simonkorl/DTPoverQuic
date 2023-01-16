@@ -8,16 +8,13 @@ extern "C" {
 #endif
 
 #include "dtplayer.h"
-#include "dtp_scheduler.h"
+ 
 
-
+#include "dtp_structure.h"
 #define BLOCK_RECORD_LEN 10
 
 
-typedef enum {
-    DTP_BLOCK_INFO_AUTO =1,
-    DTP_BLOCK_INFO_MANNUAL =2,
-} info_assemble_mode;
+
  
  
 
@@ -42,23 +39,7 @@ int dtp_assemb_input(
  
 
 //context
-typedef struct dtp_assemble_layer_ctx_ {
-    //average deadline.
-    uint64_t avrddl;
-    //Record some of the last blocks.
-    uint64_t historyLen;
-    rbinfoptr  historyArray;
-    //current array index
-    uint64_t historyCurIndex;
-    uint64_t hisCount;
 
-
-    dtp_layers_ctx * dtpctx;
-
-    //auto or mannual or other ways
-    info_assemble_mode mode;
-    
-} dtp_assem_ctx;
 
 //initialize the layer
 int dtp_assembler_init(dtp_layers_ctx* dtp_ctx,info_assemble_mode mode);

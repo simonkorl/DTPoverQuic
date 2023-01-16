@@ -9,10 +9,10 @@ extern "C" {
 #include <time.h>
  
 #include "dtplayer.h"
-#include "dtp_assemb.h"
+//#include "dtp_assemb.h"
 #include "dtp_internal.h"
  
-
+#include "dtp_structure.h"
 #define offsetsize_t int32_t
  
 ///
@@ -28,34 +28,7 @@ typedef struct block {
 */
 
 
-typedef struct {
-     
-    dtp_layers_ctx * dtpctx;
-    quiche_conn * quic_conn; //current connection
-    quiche_conn * connhash;//all the connection hash;
-    quiche_config * quic_config;
- 
-    uint64_t control_streamid;
-    offsetsize_t * offset_arrived;
- 
-    size_t dgram_hdrlen;
-    size_t off_array_num;
-    uint64_t recv_dgram_num;
-    //peer
-    uint64_t peer_RTT;
 
-    bmap * recvQueue;
- 
-    struct sockaddr_storage peer_addr;
-    
-    int control_stream_id;
-    
-    dtp_trans_mode transport_mode;
-    
- 
-} dtp_traffic_control_ctx;
-
-typedef dtp_traffic_control_ctx dtp_tc_ctx;
 
 typedef struct dtp_datagram{
     uint64_t id;
@@ -92,7 +65,7 @@ static uint8_t *gen_cid(uint8_t *cid, size_t cid_len) ;
 int dtp_tc_conn_validate(dtp_tc_ctx * tc_ctx,uint8_t * buf,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len,int socket);//todo ：如何控制粒度 
 //send the feeback of current network
 //lost pkt
-void dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,uint8_t * buf,size_t buflen,bool final_flow_data);
+void dtp_tc_control_flow_send(dtp_layers_ctx * dtp_ctx,uint8_t * buf,size_t buflen,bool final_flow_data);
 
 //Check if there is feedback data from control stream
 void dtp_tc_control_flow_check(dtp_tc_ctx * tc_ctx);
@@ -111,7 +84,7 @@ ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx); //在使用者眼里，应�
 
 //send some block
 ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block);
-
+ 
 //bool quiche_conn_is_closed(quiche_conn *conn);
 bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx);
  

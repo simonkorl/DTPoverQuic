@@ -14,13 +14,15 @@
 #include <unistd.h>
 
 #include "uthash.h"  
-#include "dtp_assemb.h"
-#include "dtp_scheduler.h"
-#include "dtp_tc.h"
+//#include "dtp_assemb.h"
+//#include "dtp_scheduler.h"
+//#include "dtp_tc.h"
 #include "quiche.h"
 #include "log_helper.h"
+#include "dtp_structure.h"
 
 #define offsetsize_t int32_t
+
 #define MAX_TOKEN_LEN                                                          \
   sizeof("quiche") - 1 + sizeof(struct sockaddr_storage) +                     \
       QUICHE_MAX_CONN_ID_LEN
@@ -30,27 +32,7 @@
 #define DTPL_MAX_CONNECTIONS 256
 
 //for compile?
-struct dtp_global_ctx {
-    const char* sni;
-    
-    quiche_conn * quic_conn;
-     dtp_sctx* schelay_ctx;     
-    dtp_tc_ctx* tc_ctx;
-    
-    dtp_assem_ctx * assemlay_ctx;
-    
-    uint64_t newid; //todo:先前释放的id？grow?
  
-    uint64_t avrRTT;    //todo:move to tc_ctx?
-    uint64_t bandwidth; 
-    uint64_t avrddl;    //dgram level.todo:block level
-    bmap * block_pool; //block hash
- 
-  
-    unsigned int do_congestion_control : 1;
-};
- 
-typedef struct dtp_global_ctx dtp_layers_ctx;
 /* 时钟同步 */
 typedef struct _ntp_time
 {
