@@ -2,7 +2,7 @@
 //passing repeat request
 //timestamp informations..etc
  
-#pragma once
+ 
 #ifndef DTP_INTERNAL_H
 #define DTP_INTERNAL_H
  
@@ -29,7 +29,28 @@
 #define MAX_BLOCK_SIZE 1000000
 #define DTPL_MAX_CONNECTIONS 256
 
-
+//for compile?
+struct dtp_global_ctx {
+    const char* sni;
+    
+    quiche_conn * quic_conn;
+     dtp_sctx* schelay_ctx;     
+    dtp_tc_ctx* tc_ctx;
+    
+    dtp_assem_ctx * assemlay_ctx;
+    
+    uint64_t newid; //todo:先前释放的id？grow?
+ 
+    uint64_t avrRTT;    //todo:move to tc_ctx?
+    uint64_t bandwidth; 
+    uint64_t avrddl;    //dgram level.todo:block level
+    bmap * block_pool; //block hash
+ 
+  
+    unsigned int do_congestion_control : 1;
+};
+ 
+typedef struct dtp_global_ctx dtp_layers_ctx;
 /* 时钟同步 */
 typedef struct _ntp_time
 {

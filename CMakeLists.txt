@@ -14,7 +14,7 @@ corrosion_import_crate(MANIFEST_PATH quiche/Cargo.toml)
 #quiche
 execute_process(COMMAND git submodule init
                 WORKING_DIRECTORY .)
-
+ 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 SET(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -86,8 +86,8 @@ target_compile_options(dtplayer-examples PRIVATE
     $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
     $<$<C_COMPILER_ID:MSVC>: >)
 
- 
-
+    get_property(dirs DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+    message(">>> include_dirs=${dirs}") #打印一下目录情况
 
 #
 # Adds clangformat as target that formats all source files

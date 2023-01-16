@@ -1,5 +1,5 @@
 /*  DTP assembler layer.Blocks are assembled before being scheduled   */
-#pragma once
+ 
 #ifndef DTP_ASSEMB_H
 #define DTP_ASSEMB_H
 

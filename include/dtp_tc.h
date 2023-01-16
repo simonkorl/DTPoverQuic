@@ -1,5 +1,5 @@
 /*  DTP traffic_control layer.Blocks are sent via tc layer.And it gives back feedback to the peer sender.   */
-#pragma once
+ 
 #ifndef DTP_TC_H
 #define  DTP_TC_H
 
@@ -64,11 +64,7 @@ typedef struct dtp_datagram{
 }ddgram;
 
  
-//left for extension
-typedef struct dtplayerSchechGis{
-    dtp_layers_ctx* dtp_ctx;
-   
-} dtpl_Cons_context_t;
+ 
 //check if dtp conn is closed 
  bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx);
 //send pkt.Contents may be altered.

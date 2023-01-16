@@ -44,27 +44,7 @@ typedef struct{
 } dtp_stats;
 /* Dtpl context */
 
-struct dtp_global_ctx {
-    const char* sni;
-    
-    quiche_conn * quic_conn;
-     dtp_sctx* schelay_ctx;     
-    dtp_tc_ctx* tc_ctx;
-    
-    dtp_assem_ctx * assemlay_ctx;
-    
-    uint64_t newid; //todo:先前释放的id？grow?
- 
-    uint64_t avrRTT;    //todo:move to tc_ctx?
-    uint64_t bandwidth; 
-    uint64_t avrddl;    //dgram level.todo:block level
-    bmap * block_pool; //block hash
- 
-  
-    unsigned int do_congestion_control : 1;
-};
- 
-typedef struct dtp_global_ctx dtp_layers_ctx;
+
  
 typedef struct dtplStreamctx_t dtpl_stream_ctx_t;
  
@@ -161,7 +141,7 @@ void dtp_conn_on_timeout(dtp_tc_ctx * tc_ctx);
 
 void dtplMsgBufreset(dtplMsgbuf* msg_buffer);
 
-void dtplMsgBufrelease(dtplMsgbuf* msg_buffer);
+ 
 
 int dtp_enable_debug_logging(void (*cb)(const char *line, void *argp),
                              void *argp);
@@ -182,6 +162,8 @@ dtp_layers_ctx* dtp_layers_initnew_serv(uint32_t version);
 void * dtp_layers_free(dtp_layers_ctx * dtp_ctx);
 
 ssize_t dtpl_conn_buf_send(dtp_layers_ctx *dtp_ctx,uint8_t * buf,uint64_t size,uint64_t priority,uint64_t deadline,int is_fragment);
+
+
 #if defined(__cplusplus)
 }
 #endif
