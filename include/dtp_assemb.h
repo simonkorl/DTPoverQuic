@@ -7,16 +7,15 @@
 extern "C" {
 #endif
 
-#include "dtplayer.h"
- 
-
+// #include "dtplayer.h"
+// #include "dtp_structure.h"
+#include "dtp_block.h"
+#include "dtp_block_record.h"
 #include "dtp_structure.h"
-#define BLOCK_RECORD_LEN 10
+#include "dtp_scheduler.h"
 
-
-
- 
- 
+// the maximum size of block record(history array)
+#define BLOCK_RECORD_LEN 10 
 
 /*
 int dtp_assemb_input(
@@ -36,23 +35,46 @@ int dtp_assemb_input(
               dtpAssMidInfoready_fn ready_fn,
     void * app__ctx);
 */
- 
+typedef enum {
+    DTP_BLOCK_INFO_AUTO =1,
+    DTP_BLOCK_INFO_MANNUAL =2,
+} info_assemble_mode;
+
+typedef struct rec_block_info{
+    uint64_t  size;
+    uint64_t  priority;
+    uint64_t  deadline;
+} r_binfo,* rbinfoptr;
 
 //context
-
+typedef struct dtp_assemble_layer_ctx {
+    //average deadline.
+    uint64_t avrddl;
+    //Record some of the last blocks.
+    uint64_t historyLen;
+    rbinfoptr historyArray;
+    //current array index
+    uint64_t historyCurIndex;
+    uint64_t hisCount;
+    //auto or mannual or other ways
+    info_assemble_mode mode;
+} dtp_assem_ctx;
 
 //initialize the layer
-int dtp_assembler_init(dtp_layers_ctx* dtp_ctx,info_assemble_mode mode);
-//assemble the block automatically
-int dtp_assemble_block_auto(dtp_layers_ctx* dtp_ctx, dtp_assem_ctx* assemlay_ctx, block * blk);
+dtp_assem_ctx* dtp_assembler_init(info_assemble_mode mode);
+// assemble the block automatically
+// Automatically set priority and deadline.
+int dtp_assemble_block_auto(dtp_assem_ctx* assemlay_ctx, uint64_t avrddl, uint64_t avrRTT, uint64_t bandwidth, block* blk);
 
-delete_block(bmap * blockhash,uint64_t id);
-//assemble the block
-int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, dtp_assem_ctx* assemlay_ctx,\
+// assemble the block
+//Create a block based on the given data,and adds it to the block pool.
+int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
+    dtp_sctx* schelay_ctx, \
+    dtp_assem_ctx* assemlay_ctx,\
     uint64_t size,      \
     uint64_t priority,  \
     uint64_t deadline,  \
-    char * buf,         \
+    uint8_t* buf,       \
     int is_fragment     \
     );
 

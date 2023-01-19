@@ -7,16 +7,16 @@ extern "C" {
 #include <stdint.h>
 #include "quiche.h"
 #include "uthash.h"
+#include "dtp_block_map.h"
 #include "dtp_internal.h"
 #include "dtp_structure.h"
- 
+#include "dtp_tc.h"
  
 #define DTPL_PORT 853
 
 #define DTPL_ERROR_NO_ERROR 0x00
 #define DTPL_ERROR_INTERNAL 0x01
 #define DTPL_ERROR_PROTOCOL 0x02
-
  
 typedef enum {
    dropExpiredMode=2,
@@ -51,18 +51,12 @@ how to deal with ev?
 when ev comes,u can read stream or read dgram.
 */
 
-void dtp_conn_on_timeout(dtp_tc_ctx * tc_ctx);
-
-//Parse the feedback recieved from peer buf
 uint64_t dtp_conn_get_feedback(dtp_tc_ctx * tc_ctx,uint8_t * feedback);
 
-
 int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *path);
-
  
 int dtp_tc_config_enable_dgram(dtp_tc_ctx * tc_ctx,bool enabled,size_t recv_queue_len,size_t send_queue_len);
 
-uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx);
 //check if quiche conn is surpported
 bool dtp_version_is_supported(uint32_t version);
 
@@ -80,27 +74,16 @@ int dtp_conn_check(const uint8_t *buf, size_t buf_len, size_t dcil,
                        uint32_t *version, uint8_t *type,
                        uint8_t *scid, size_t *scid_len,
                        uint8_t *dcid, size_t *dcid_len,
-                       uint8_t *token, size_t *token_len){
-                        
- return quiche_header_info(buf, buf_len, dcil, version, type, scid,
-                           scid_len, dcid, dcid_len, token, token_len);
-
-  
-}
-
- 
-
+                       uint8_t *token, size_t *token_len);
 
 //set quiche config by default
 int dtp_tc_config_set(dtp_tc_ctx * tc_ctx);
 
-void bmap_add(bmap * head,uint64_t id,block * blk);
-
-bmap * find_bmap(bmap * head,uint64_t id);
-
-void dtpl_set_quic(dtp_layers_ctx* dtp_ctx, quiche_conn * quic);
+// TODO: no implementation
+// void dtpl_set_quic(dtp_layers_ctx* dtp_ctx, quiche_conn * quic);
  
-quiche_conn * dtpl_get_quic_ctx(dtp_layers_ctx* ctx);
+// TODO: no implementation
+// quiche_conn * dtpl_get_quic_ctx(dtp_layers_ctx* ctx);
  
 typedef enum {
     dtplTransportMode_unspecified = 0,
@@ -113,34 +96,27 @@ typedef enum {
  
 int dtp_enable_debug_logging(void (*cb)(const char *line, void *argp),
                              void *argp);
-void dtpl_set_cache_duration(dtp_layers_ctx* dtp_ctx, uint64_t cache_duration_max);
+// void dtpl_set_cache_duration(dtp_layers_ctx* dtp_ctx, uint64_t cache_duration_max);
 
 
-uint64_t dtplTCheck(dtp_layers_ctx* dtp_ctx, uint64_t current_time);
+// uint64_t dtplTCheck(dtp_layers_ctx* dtp_ctx, uint64_t current_time);
  
-bmap * find_bmap(bmap * head,uint64_t id);
-
-void bmap_add(bmap * head,uint64_t id,block * blk);
-
-uint8_t * dtplMsgBufstore(uint8_t* bytes, size_t length, dtplMsgbuf* msg_buffer, int* is_finished);
-
-void dtp_conn_on_timeout(dtp_tc_ctx * tc_ctx);
+// uint8_t * dtplMsgBufstore(uint8_t* bytes, size_t length, dtplMsgbuf* msg_buffer, int* is_finished);
 
 void dtplMsgBufreset(dtplMsgbuf* msg_buffer);
 
- 
+void dtplMsgBufrelease(dtplMsgbuf* msg_buffer);
 
-int dtp_enable_debug_logging(void (*cb)(const char *line, void *argp),
-                             void *argp);
-
-uint64_t dtp_conn_get_feedback(dtp_tc_ctx * tc_ctx,uint8_t * feedback)
-;
 int dtp_connect(dtp_layers_ctx * dtp_ctx,const char *server_name,
                             const uint8_t *scid, size_t scid_len,
                             const struct sockaddr *to, size_t to_len,
                             quiche_config *config);
-
 void dtp_conn_stats(dtp_layers_ctx *dtp_ctx, dtp_stats *out);
+
+void dtp_conn_on_timeout(dtp_tc_ctx * tc_ctx);
+
+//Parse the feedback recieved from peer buf
+uint64_t dtp_conn_get_feedback(dtp_tc_ctx * tc_ctx,uint8_t * feedback);
 
 //Initialize the layers.Include setting up quiche config
 dtp_layers_ctx* dtp_layers_initnew_cli(uint32_t version);

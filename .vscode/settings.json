@@ -1,0 +1,16 @@
+{
+    "files.associations": {
+        "dtp_scheduler.h": "c",
+        "dtplayer.h": "c",
+        "dtp_internal.h": "c",
+        "dtp_tc.h": "c",
+        "uthash.h": "c",
+        "dtp_structure.h": "c",
+        "dtp_block_map.h": "c",
+        "dtp_assemb.h": "c",
+        "stdlib.h": "c",
+        "dtp_block_record.h": "c",
+        "math.h": "c",
+        "log_helper.h": "c"
+    }
+}

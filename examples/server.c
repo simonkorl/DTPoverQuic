@@ -570,8 +570,9 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
       printf("%c",block_buf[offstart+i]);
     
   }
-    dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
-  dtp_tc_control_flow_send(conn_io->dtp_ctx,block_buf,sizeof(block_buf),false);
+
+  // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
+  // dtp_tc_control_flow_send(conn_io->dtp_ctx,block_buf,sizeof(block_buf),false);
   
       while (quiche_stream_iter_next(readable, &s)) {
         log_debug("stream %" PRIu64 " is readable", s);

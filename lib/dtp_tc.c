@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <assert.h>
 
 #include <netdb.h>
 #include <sys/socket.h>
@@ -26,10 +27,13 @@
 #include <stddef.h>
 #include <errno.h>
 #include <stdint.h>
-#include "dtplayer.h"
+
+#include "dtp_block.h"
 #include "dtp_internal.h"
 #include "dtp_assemb.h"
 #include "dtp_structure.h"
+#include "dtp_tc.h"
+#include "log_helper.h"
 
 //usage:
 /*
@@ -70,6 +74,8 @@ typedef struct dtp_dgram{
 //initialize tcontroler
 //quic_conn and hash、config、block RecvQueue and blockinque left blank.
 
+
+
 int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
 {//dtp_tc_ctx
     int ret = 0;
@@ -80,7 +86,7 @@ int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
     }
     else {
       
-         dtp_tc_ctx* tc_ctx = ( dtp_tc_ctx*)malloc(sizeof(dtp_tc_ctx));
+        dtp_tc_ctx* tc_ctx = ( dtp_tc_ctx*)malloc(sizeof(dtp_tc_ctx));
         if (tc_ctx == NULL) {
             ret = -1; }
         else {
@@ -168,192 +174,161 @@ static uint8_t *gen_cid(uint8_t *cid, size_t cid_len) {
 //validate the connection,
 //return -1 => conn doesnt exist , some work needs to be done and need to wait for further data from peer's socket
 //1  => connection exists;
-int dtp_tc_conn_validate(dtp_tc_ctx * tc_ctx,uint8_t * buf,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len,int socket){
+// int dtp_tc_conn_validate(dtp_tc_ctx * tc_ctx,uint8_t * buf,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len,int socket){
 
-    const int LOCAL_CONN_ID_LEN=10;
-    static uint8_t out[MAX_DATAGRAM_SIZE];
-    memset(out,0,MAX_DATAGRAM_SIZE);
-    int ret=-1;
-    uint8_t type;
-    uint32_t version;
+//     const int LOCAL_CONN_ID_LEN=10;
+//     static uint8_t out[MAX_DATAGRAM_SIZE];
+//     memset(out,0,MAX_DATAGRAM_SIZE);
+//     int ret=-1;
+//     uint8_t type;
+//     uint32_t version;
 
-    uint8_t scid[MAX_DATAGRAM_SIZE];
-    size_t scid_len = sizeof(scid);
+//     uint8_t scid[MAX_DATAGRAM_SIZE];
+//     size_t scid_len = sizeof(scid);
 
-    uint8_t dcid[QUICHE_MAX_CONN_ID_LEN];
-    size_t dcid_len = sizeof(dcid);
+//     uint8_t dcid[QUICHE_MAX_CONN_ID_LEN];
+//     size_t dcid_len = sizeof(dcid);
 
-    uint8_t odcid[QUICHE_MAX_CONN_ID_LEN];
-    size_t odcid_len = sizeof(odcid);
+//     uint8_t odcid[QUICHE_MAX_CONN_ID_LEN];
+//     size_t odcid_len = sizeof(odcid);
 
-    uint8_t token[MAX_TOKEN_LEN];
-    size_t token_len = sizeof(token);
+//     uint8_t token[MAX_TOKEN_LEN];
+//     size_t token_len = sizeof(token);
 
-    int rc =
-        quiche_header_info(buf, read, LOCAL_CONN_ID_LEN, &version, &type, scid,
-                           &scid_len, dcid, &dcid_len, token, &token_len);
+//     int rc =
+//         quiche_header_info(buf, read, LOCAL_CONN_ID_LEN, &version, &type, scid,
+//                            &scid_len, dcid, &dcid_len, token, &token_len);
 
-    if (rc < 0) { 
-      log_error("failed to parse header: %d", rc);
-    //  ret=DTP_ERR_DONE; 
+//     if (rc < 0) { 
+//       log_error("failed to parse header: %d", rc);
+//     //  ret=DTP_ERR_DONE; 
 
-      return DTP_ERR_DONE;
-    }
+//       return DTP_ERR_DONE;
+//     }
 
-    //HASH_FIND(hh, tc_ctx->connhash, dcid, dcid_len, tc_ctx->quic_conn);
+//     //HASH_FIND(hh, tc_ctx->connhash, dcid, dcid_len, tc_ctx->quic_conn);
 
 
-    if (tc_ctx->quic_conn == NULL) {
-      if (!quiche_version_is_supported(version)) {
-        log_debug("version negotiation");
+//     if (tc_ctx->quic_conn == NULL) {
+//       if (!quiche_version_is_supported(version)) {
+//         log_debug("version negotiation");
 
-        ssize_t written = quiche_negotiate_version(scid, scid_len, dcid,
-                                                   dcid_len, out, sizeof(out));
+//         ssize_t written = quiche_negotiate_version(scid, scid_len, dcid,
+//                                                    dcid_len, out, sizeof(out));
 
-        if (written < 0) {
-          log_error("failed to create vneg packet: %zd", written);
+//         if (written < 0) {
+//           log_error("failed to create vneg packet: %zd", written);
           
-          return DTP_ERR_DONE;
-        }
+//           return DTP_ERR_DONE;
+//         }
 
-       // set_tos(conns->ai_family, conns->sock, 5 << 5);
-        ssize_t sent = sendto(socket, out, written, 0,
-                              (struct sockaddr *)&peer_addr, peer_addr_len);
-        if (sent != written) {
-          log_error("failed to send %s", strerror(errno));
-          return DTP_ERR_DONE;
-        }
+//        // set_tos(conns->ai_family, conns->sock, 5 << 5);
+//         ssize_t sent = sendto(socket, out, written, 0,
+//                               (struct sockaddr *)&peer_addr, peer_addr_len);
+//         if (sent != written) {
+//           log_error("failed to send %s", strerror(errno));
+//           return DTP_ERR_DONE;
+//         }
 
-        log_debug("sent %zd bytes", sent);
-         return DTP_ERR_DONE;
-      }
+//         log_debug("sent %zd bytes", sent);
+//          return DTP_ERR_DONE;
+//       }
 
-      if (token_len == 0) {
-        log_debug("stateless retry");
+//       if (token_len == 0) {
+//         log_debug("stateless retry");
 
-        mint_token(dcid, dcid_len, &peer_addr, peer_addr_len, token,
-                   &token_len);
+//         mint_token(dcid, dcid_len, &peer_addr, peer_addr_len, token,
+//                    &token_len);
 
-        uint8_t new_cid[LOCAL_CONN_ID_LEN];
+//         uint8_t new_cid[LOCAL_CONN_ID_LEN];
 
-        if (gen_cid(new_cid, LOCAL_CONN_ID_LEN) == NULL) {
+//         if (gen_cid(new_cid, LOCAL_CONN_ID_LEN) == NULL) {
           
-          return DTP_ERR_DONE;
-        }
+//           return DTP_ERR_DONE;
+//         }
 
-        ssize_t written = quiche_retry(scid, scid_len, dcid, dcid_len, new_cid,
-                                       LOCAL_CONN_ID_LEN, token, token_len,
-                                       version, out, sizeof(out));
+//         ssize_t written = quiche_retry(scid, scid_len, dcid, dcid_len, new_cid,
+//                                        LOCAL_CONN_ID_LEN, token, token_len,
+//                                        version, out, sizeof(out));
 
-        if (written < 0) {
-          log_error("failed to create retry packet: %zd", written);
-          return DTP_ERR_DONE;
-        }
+//         if (written < 0) {
+//           log_error("failed to create retry packet: %zd", written);
+//           return DTP_ERR_DONE;
+//         }
 
-       // set_tos(conns->ai_family, conns->sock, 5 << 5);
-        ssize_t sent = sendto(socket, out, written, 0,
-                              (struct sockaddr *)peer_addr, peer_addr_len);
-        if (sent != written) {
-          log_error("failed to send %s", strerror(errno));
-          return DTP_ERR_DONE;
-        }
+//        // set_tos(conns->ai_family, conns->sock, 5 << 5);
+//         ssize_t sent = sendto(socket, out, written, 0,
+//                               (struct sockaddr *)peer_addr, peer_addr_len);
+//         if (sent != written) {
+//           log_error("failed to send %s", strerror(errno));
+//           return DTP_ERR_DONE;
+//         }
 
-        log_debug("sent %zd bytes", sent);
-         return DTP_ERR_DONE;
-      }
+//         log_debug("sent %zd bytes", sent);
+//          return DTP_ERR_DONE;
+//       }
 
-      if (!validate_token(token, token_len, &peer_addr, peer_addr_len, odcid,
-                          &odcid_len)) {
-        log_error("invalid address validation token");
-        return DTP_ERR_DONE;
-      }
+//       if (!validate_token(token, token_len, &peer_addr, peer_addr_len, odcid,
+//                           &odcid_len)) {
+//         log_error("invalid address validation token");
+//         return DTP_ERR_DONE;
+//       }
 
-      tc_ctx->quic_conn = create_conn(dcid, dcid_len, odcid, odcid_len, &peer_addr,
-                            peer_addr_len);
+//       tc_ctx->quic_conn = create_conn(dcid, dcid_len, odcid, odcid_len, &peer_addr,
+//                             peer_addr_len);
 
-      if (tc_ctx->quic_conn == NULL) {
-        return DTP_ERR_DONE;
-      }
-    }
+//       if (tc_ctx->quic_conn == NULL) {
+//         return DTP_ERR_DONE;
+//       }
+//     }
 
  
-  return 1;
-} 
+//   return 1;
+// } 
+
 //send the feeback of current network
 //lost pkt
-void dtp_tc_control_flow_send(dtp_layers_ctx * dtp_ctx,uint8_t * buf,size_t buflen,bool final_flow_data){
-  dtp_tc_ctx * tc_ctx=dtp_ctx->tc_ctx;
-//  dtp_layers_ctx * dtp_ctx=tc_ctx->dtpctx;
-  
-   
-  memcpy(buf,&(dtp_ctx->avrRTT),sizeof((dtp_ctx->avrRTT)));
-
-  if (quiche_conn_is_established(tc_ctx->quic_conn)){
-  ssize_t sent = quiche_conn_stream_send(tc_ctx->quic_conn, tc_ctx->control_stream_id, buf,
-                                             sizeof((dtp_ctx->avrRTT)), final_flow_data);
-
-  if (sent != buflen) {
-    log_debug("Failed to send feeback_stream %d completely: sent %zd",tc_ctx->control_stream_id, sent);
-   }
-  } 
-  else {
-     log_debug("Failed to send feeback_stream %d,conn isn't exist",tc_ctx->control_stream_id);
-  }
-  
-
+size_t dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,
+    uint8_t * buf, size_t buflen,
+    bool final_flow_data) {
+    if (quiche_conn_is_established(tc_ctx->quic_conn)) {
+        ssize_t sent = quiche_conn_stream_send(
+            tc_ctx->quic_conn, tc_ctx->control_stream_id, 
+            buf, buflen, final_flow_data);
+        if (sent != buflen) {
+            log_debug("Failed to send feeback_stream %d completely: sent %zd",tc_ctx->control_stream_id, sent);
+        }
+        return sent;
+    }  
+    else {
+        log_debug("Failed to send feeback_stream %d,conn isn't exist",tc_ctx->control_stream_id);
+        return -1;
+    }
 }
 
 //Check and Read the feedback data from peer .
-void dtp_tc_control_flow_check(dtp_tc_ctx * tc_ctx){
- 
-  static uint8_t buf[MAX_BLOCK_SIZE];
-  memset(buf, 0, MAX_BLOCK_SIZE);
-  uint64_t s = tc_ctx->control_stream_id;
-  //quiche_stream_iter *readable = quiche_conn_readable(tc_ctx->quic_conn);
-
-  if(quiche_conn_stream_readable(tc_ctx->quic_conn,s)) {
-        
-    
-        bool fin = false;
+size_t dtp_tc_control_flow_recv(dtp_tc_ctx * tc_ctx, uint8_t *out, size_t buf_len, bool *final_flow_data){
+    uint64_t s = tc_ctx->control_stream_id;
+    if(quiche_conn_stream_readable(tc_ctx->quic_conn,s)) {
         ssize_t recv_len =
-            quiche_conn_stream_recv(tc_ctx->quic_conn, s, buf, sizeof(buf), &fin);
+            quiche_conn_stream_recv(tc_ctx->quic_conn, s, out, sizeof(buf_len), final_flow_data);
         if (recv_len > 0){
-          uint64_t p_rtt;
-          memcpy(&p_rtt,buf,sizeof(p_rtt));
-          tc_ctx->peer_RTT=p_rtt;
-
-          log_debug("Control stream: dgram RTT :%" PRIu64 "  ", p_rtt);
+            log_debug("Control stream: recv %ld", recv_len);
+            return recv_len;
         }
-        else
-          log_debug("Failed to get data from control stream");
-         
-        
-      }
-  //todo:deal with the buf
-  //read the control messag
-     // quiche_stream_iter_free(readable);
-
-
+        else {
+            log_debug("Failed to get data from control stream");
+            return recv_len;
+        }
+    } else {
+        return -1;
+    }
 }
-//Todo :check if the ctx as well as the parameters is not null.
-bool dtp_conn_is_established(dtp_layers_ctx * dtp_ctx){
-  
-  return (dtp_ctx!=NULL &&dtp_ctx->schelay_ctx!=NULL&&dtp_ctx->tc_ctx!=NULL&&dtp_ctx->assemlay_ctx!=NULL)&&\
-  quiche_conn_is_established(dtp_ctx->tc_ctx->quic_conn);
-}
-
 
 uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx){
   return quiche_conn_timeout_as_nanos(tc_ctx->quic_conn);
 }
-//select a block from the pool and send via datagram
-ssize_t dtp_conn_send(dtp_tc_ctx *tc_ctx, uint8_t *out,size_t out_len){
 
-  quiche_send_info send_info;
-
-  return  quiche_conn_send(tc_ctx->quic_conn, *out, out_len,
-                          &send_info);
-}
 
 //在使用者眼里，应该可以传入buf就解决掉assemble、发送的问题
 //是否提供写buf的能力
@@ -362,9 +337,6 @@ ssize_t dtp_conn_send(dtp_tc_ctx *tc_ctx, uint8_t *out,size_t out_len){
 
 //send some block
 ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
-
-    
-
     if (block==NULL)
         return DTP_ERR_NULL_PTR;
     uint8_t * buf_out=block->buf;
@@ -389,7 +361,6 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
     size_t dg_counter=0;
     
     while(dg_counter<dgram_num){
-
             void * curptr=(void *)out;
             memcpy(curptr,&id,sizeof(id));//set id in
             curptr+=sizeof(id);
@@ -424,73 +395,37 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
             dg_counter++;
             offset+=dgram_payloadlen;
 
-            bandwidth+=currentTime()-sent_time;
+            bandwidth+=getCurrentUsec()-sent_time;
+        }
     }
-
-}
  
     dtp_ctx->bandwidth= (dgram_num*MAX_DATAGRAM_SIZE)/(bandwidth/1000);//byte/ms
-  //delete block from hash map and list node
+    //delete block from hash map and list node
 
-  delete_block(dtp_ctx->block_pool,id);
-  block_tlinkPtr linkIter=dtp_ctx->schelay_ctx->blockinque;
-  if(linkIter!=NULL){
+    bmap_delete(dtp_ctx->block_pool,id);
+    block_tlinkPtr linkIter=dtp_ctx->schelay_ctx->blockinque;
+    if(linkIter!=NULL){
     while(linkIter->data.id!=id){
         linkIter=linkIter->next;
-      }
+    }
     //not point to head
     
-      block_tlinkPtr last=linkIter->last;
-      block_tlinkPtr next=linkIter->next;
+    block_tlinkPtr last=linkIter->last;
+    block_tlinkPtr next=linkIter->next;
 
-      last->next=next;
-      next->last=last;
+    last->next=next;
+    next->last=last;
 
-      free(linkIter);
+    free(linkIter);
 
-    if(linkIter==dtp_ctx->schelay_ctx->blockinque)
-      dtp_ctx->schelay_ctx->blockinque=NULL;
+    if(linkIter==dtp_ctx->schelay_ctx->blockinque) {
+        dtp_ctx->schelay_ctx->blockinque=NULL;
+    }
   }
   
  // dtp_ctx->schelay_ctx->blockinque
 
     return sent;
-}
-//process the imcoming socket buf;
-
-
-
-//select a block from the pool and send via datagram
-ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
-
-  uint64_t id=dtp_schedule_block( dtp_ctx);
-  block * aim_block= find_bmap(dtp_ctx->block_pool,id);
-  if( aim_block==NULL)
-    return -1;
-  return dtpl_tc_conn_block_send(dtp_ctx, aim_block);
-}
-
-
-
-
-//bool quiche_conn_is_closed(quiche_conn *conn);
-bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx){
-
-  return quiche_conn_is_closed(tc_ctx->quic_conn);
-}
- 
-
-//process the imcoming socket buf;
-ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len){
-
-    quiche_recv_info recv_info = {
-        (struct sockaddr *)peer_addr,
-
-        peer_addr_len,
-    };
-
-    return quiche_conn_recv(tc_ctx->quic_conn, buf, read, &recv_info);
- 
 }
 
 //extract block bufdata (may be broken when using datagram) from dgram_recv_queue 
@@ -565,6 +500,49 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
 
     log_info("Recieve block,ID :%lu size : %lu priority :%lu dgram_num:%lu RTT:%lu\n",id,size,priority,off_ind+1);
     return block_buf;
+}
+
+//process the imcoming socket buf;
+
+//select a block from the pool and send via datagram
+//TODO: rename
+ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
+  uint64_t id = dtp_schedule_block(dtp_ctx->schelay_ctx, dtp_ctx->block_pool, dtp_ctx->bandwidth, dtp_ctx->avrRTT);
+  block * aim_block= bmap_find(dtp_ctx->block_pool,id);
+  if( aim_block==NULL)
+    return -1;
+  return dtpl_tc_conn_block_send(dtp_ctx, aim_block);
+}
+
+//bool quiche_conn_is_closed(quiche_conn *conn);
+bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx){
+  return quiche_conn_is_closed(tc_ctx->quic_conn);
+}
+
+//Todo :check if the ctx as well as the parameters is not null.
+bool dtp_conn_is_established(dtp_tc_ctx *tc_ctx) {
+  assert((tc_ctx != NULL && tc_ctx->quic_conn != NULL));
+  return quiche_conn_is_established(tc_ctx->quic_conn);
+}
+ 
+//select a block from the pool and send via datagram
+ssize_t dtp_conn_send(dtp_tc_ctx *tc_ctx, uint8_t *out,size_t out_len){
+
+  quiche_send_info send_info;
+
+  return  quiche_conn_send(tc_ctx->quic_conn, *out, out_len,
+                          &send_info);
+}
+
+//process the imcoming socket buf;
+ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len){
+    quiche_recv_info recv_info = {
+        (struct sockaddr *)peer_addr,
+
+        peer_addr_len,
+    };
+
+    return quiche_conn_recv(tc_ctx->quic_conn, buf, read, &recv_info);
 }
 
 int parse_ddgram_hdr(uint8_t * dgram,uint64_t * id,offsetsize_t * offset,uint64_t * sent_time){

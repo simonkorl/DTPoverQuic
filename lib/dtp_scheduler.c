@@ -4,17 +4,9 @@
 #include <stddef.h>
 
  
-#include "dtplayer.h"
 #include "dtp_assemb.h"
 #include "dtp_internal.h"
- 
 #include "dtp_scheduler.h"
-
-
-  
-
- 
-  
 
 /* init scheduler
 peer_addr blockinque left blank
@@ -63,14 +55,12 @@ void dtplq_disable_sche(dtp_layers_ctx* dtp_ctx)
 
     printf("ScheOFF\n");
 }
-int64_t dtplScheCalReaPri( dtp_sctx* sche_ctx, dtp_layers_ctx* dtp_ctx,uint64_t id){
+int64_t dtpl_sche_cal_real_pri(dtp_sctx* sche_ctx, bmap* block_pool, double bandwidth, double avrRTT, uint64_t id) {
 
-    bmap * cur=find_bmap(dtp_ctx->block_pool,id);
+    bmap* cur = bmap_find(block_pool,id);
     block_tlinkPtr iter=sche_ctx->blockinque;
     uint64_t time_queue=0;
     
-  
-
     while(iter!=NULL){
 
         //HASH_FIND()
@@ -82,14 +72,13 @@ int64_t dtplScheCalReaPri( dtp_sctx* sche_ctx, dtp_layers_ctx* dtp_ctx,uint64_t 
         iter=iter->next;
     }
 
-
     if(time_queue==0)
         return -1;
 
     uint64_t rem=getCurrentUsec()-time_queue;
     iter->data.left=rem;
 
-    int64_t ret=rem+(cur->block.priority)/(cur->block.deadline)+(float)cur->block.size/dtp_ctx->bandwidth+(float)dtp_ctx->avrRTT;
+    int64_t ret=rem+(cur->block.priority)/(cur->block.deadline)+(float)cur->block.size/bandwidth+avrRTT;
     
     return ret;
     /*
@@ -100,21 +89,20 @@ todo:use hash
 
 
 //todo:考虑sche binfo queue使用hash
-uint64_t dtp_schedule_block(dtp_layers_ctx* dtp_ctx){
-
-     dtp_sctx* sche_ctx=dtp_ctx->schelay_ctx;
-    bmap * blocks=dtp_ctx->block_pool;
+uint64_t dtp_schedule_block(dtp_sctx* sche_ctx, bmap* block_pool, double bandwidth, double avrRTT){
+    bmap * blocks = block_pool;
     bmap * iter,*tmp;
     uint64_t ret=0;
     uint64_t nxtP=0;
     uint64_t nextID_priority;
-    int pri=dtplScheCalReaPri(sche_ctx, dtp_ctx,sche_ctx->nxtID);
+    int pri = dtpl_sche_cal_real_pri(sche_ctx, block_pool, bandwidth, avrRTT, sche_ctx->nxtID);
     if(pri<0)
         nextID_priority=0;
     else
         nextID_priority=pri;
+
     HASH_ITER(hh, blocks, iter, tmp) {
-         int real=dtplScheCalReaPri(sche_ctx, dtp_ctx,iter->block.id);
+         int real = dtpl_sche_cal_real_pri(sche_ctx, block_pool, bandwidth, avrRTT, iter->block.id);
          if(real!=-1&&real>nextID_priority){
             ret=iter->block.id;
             sche_ctx->nxtID=ret;

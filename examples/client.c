@@ -318,9 +318,9 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
     
   }
 
-   dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
+  // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
 
-   dtp_tc_control_flow_send(conn_io->dtp_ctx, buf, sizeof(buf),true);
+  // dtp_tc_control_flow_send(conn_io->dtp_ctx, buf, sizeof(buf),true);
   
     uint64_t s = 0;
     quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);
@@ -349,13 +349,14 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
       if (fin) {
         ended_at = get_current_usec();
 
-        uint64_t bct = quiche_conn_bct(conn_io->conn, s);
-        quiche_block block_info;
-        quiche_conn_block_info(conn_io->conn, s, &block_info);
+        // TODO: add stats
+        // uint64_t bct = quiche_conn_bct(conn_io->conn, s);
+        // quiche_block block_info;
+        // quiche_conn_block_info(conn_io->conn, s, &block_info);
 
-        dump_file("%ld,%ld,%ld,%ld,%ld,%ld\n", s, bct, block_info.size,
-                block_info.priority, block_info.deadline,
-                  ended_at - started_at);
+        // dump_file("%ld,%ld,%ld,%ld,%ld,%ld\n", s, bct, block_info.size,
+        //         block_info.priority, block_info.deadline,
+        //           ended_at - started_at);
       }
     }
 
