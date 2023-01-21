@@ -1,8 +1,7 @@
-
-
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <assert.h>
  
 #include "dtp_assemb.h"
 #include "dtplayer.h"
@@ -46,19 +45,19 @@ ssize_t dtp_negotiate_version(const uint8_t *scid, size_t scid_len,
                                  out,  out_len);
 }
 
-int dtp_accept(dtp_layers_ctx * dtp_ctx,const uint8_t *scid, size_t scid_len,
-                           const uint8_t *odcid, size_t odcid_len,
-                           const struct sockaddr *from, size_t from_len,
-                           quiche_config *config){
+// int dtp_accept(dtp_layers_ctx * dtp_ctx,const uint8_t *scid, size_t scid_len,
+//                            const uint8_t *odcid, size_t odcid_len,
+//                            const struct sockaddr *from, size_t from_len,
+//                            quiche_config *config){
 
-    if(dtp_ctx==NULL)
-        return -1;
+//     if(dtp_ctx==NULL)
+//         return -1;
     
-    dtp_ctx->quic_conn=quiche_accept(scid,scid_len,odcid, odcid_len,from,  from_len,config);
-    dtp_ctx->tc_ctx->quic_conn=dtp_ctx->quic_conn;
+//     dtp_ctx->quic_conn=quiche_accept(scid,scid_len,odcid, odcid_len,from,  from_len,config);
+//     dtp_ctx->tc_ctx->quic_conn=dtp_ctx->quic_conn;
 
-    return 1;
-}
+//     return 1;
+// }
 
 int dtp_conn_check(const uint8_t *buf, size_t buf_len, size_t dcil,
                        uint32_t *version, uint8_t *type,
@@ -143,18 +142,18 @@ void dtplMsgBufrelease(dtplMsgbuf* msg_buffer)
     memset(msg_buffer, 0, sizeof(dtplMsgbuf));
 }
 
-int dtp_connect(dtp_layers_ctx * dtp_ctx,const char *server_name,
-                            const uint8_t *scid, size_t scid_len,
-                            const struct sockaddr *to, size_t to_len,
-                            quiche_config *config){
-    if(dtp_ctx==NULL)
-        return -1;
+// int dtp_connect(dtp_layers_ctx * dtp_ctx,const char *server_name,
+//                             const uint8_t *scid, size_t scid_len,
+//                             const struct sockaddr *to, size_t to_len,
+//                             quiche_config *config){
+//     if(dtp_ctx==NULL)
+//         return -1;
 
-    dtp_ctx->quic_conn= quiche_connect(server_name, scid, scid_len, to, to_len, config);
-    dtp_ctx->tc_ctx->quic_conn=dtp_ctx->quic_conn;
+//     dtp_ctx->quic_conn= quiche_connect(server_name, scid, scid_len, to, to_len, config);
+//     dtp_ctx->tc_ctx->quic_conn=dtp_ctx->quic_conn;
 
-    return 1;
-}
+//     return 1;
+// }
 
 void dtp_conn_stats(dtp_layers_ctx *dtp_ctx, dtp_stats *out){
 
@@ -172,101 +171,99 @@ uint64_t dtp_conn_get_feedback(dtp_tc_ctx * tc_ctx,uint8_t * feedback){
 }
 
 dtp_layers_ctx* dtp_layers_initnew_cli(uint32_t version){
-
     //dtp layers init
     dtp_layers_ctx * dtp_ctx=(dtp_layers_ctx * )malloc(sizeof(dtp_layers_ctx));
     if (dtp_ctx == NULL) {
- 
         return NULL;
     }
-    dtp_assembler_init(DTP_BLOCK_INFO_AUTO);    
-    dtp_scheduler_init(dtp_ctx,0);      //only implement dgram sending.blockinque left NULL
-
-    dtp_tcontroler_init(dtp_ctx);
+    memset(dtp_ctx, 0, sizeof(dtp_layers_ctx));
+    assert(dtp_assembler_init(dtp_ctx, DTP_BLOCK_INFO_AUTO) == 0);    
+    assert(dtp_scheduler_init(dtp_ctx, 0) == 0);      //only implement dgram sending.blockinque left NULL
+    assert(dtp_tcontroler_init(dtp_ctx) == 0);
 
     //quiche conf
 
-    const int dgramRecvQueueLen=20;
-    const int dgramSendQueueLen=20;
-    quiche_config * config=quiche_config_new(version);
-    dtp_ctx->tc_ctx->quic_config=config;
+//     const int dgramRecvQueueLen=20;
+//     const int dgramSendQueueLen=20;
+//     quiche_config * config=quiche_config_new(version);
+//     dtp_ctx->tc_ctx->quic_config=config;
   
-    quiche_config_load_cert_chain_from_pem_file(config, "./cert.crt");
-    quiche_config_load_priv_key_from_pem_file(config, "./cert.key");
+//     quiche_config_load_cert_chain_from_pem_file(config, "./cert.crt");
+//     quiche_config_load_priv_key_from_pem_file(config, "./cert.key");
 
-    quiche_config_set_application_protos(config,(uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
+//     quiche_config_set_application_protos(config,(uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
 
-    quiche_config_set_max_idle_timeout(config, 5000);
-    quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
-    quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
-    quiche_config_set_initial_max_data(config, 1000000000);
-    quiche_config_set_initial_max_stream_data_uni(config, 10000000);
-    quiche_config_set_initial_max_streams_uni(config, 40000);
-    quiche_config_set_initial_max_stream_data_bidi_local(config, 10000000);
-    quiche_config_set_initial_max_stream_data_bidi_remote(config, 10000000);
-    quiche_config_set_initial_max_streams_bidi(config, 40000);
-    quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
-    //test on dgram
-    quiche_config_enable_dgram(config, true, dgramRecvQueueLen,dgramSendQueueLen);
+//     quiche_config_set_max_idle_timeout(config, 5000);
+//     quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+//     quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+//     quiche_config_set_initial_max_data(config, 1000000000);
+//     quiche_config_set_initial_max_stream_data_uni(config, 10000000);
+//     quiche_config_set_initial_max_streams_uni(config, 40000);
+//     quiche_config_set_initial_max_stream_data_bidi_local(config, 10000000);
+//     quiche_config_set_initial_max_stream_data_bidi_remote(config, 10000000);
+//     quiche_config_set_initial_max_streams_bidi(config, 40000);
+//     quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
+//     //test on dgram
+//     quiche_config_enable_dgram(config, true, dgramRecvQueueLen,dgramSendQueueLen);
 
 
-     if (getenv("SSLKEYLOGFILE")) {
-    quiche_config_log_keys(config);
-  }
+//      if (getenv("SSLKEYLOGFILE")) {
+//     quiche_config_log_keys(config);
+//   }
 
 
     return dtp_ctx;
 }
 
 dtp_layers_ctx* dtp_layers_initnew_serv(uint32_t version){
-
-
     //dtp layers init
-    dtp_layers_ctx * dtp_ctx=(dtp_layers_ctx * )malloc(sizeof(dtp_layers_ctx));
+    dtp_layers_ctx * dtp_ctx=(dtp_layers_ctx *)malloc(sizeof(dtp_layers_ctx));
     if (dtp_ctx == NULL) {
- 
         return NULL;
-  }
-    dtp_assembler_init(DTP_BLOCK_INFO_AUTO);    
-    dtp_scheduler_init(dtp_ctx, 0);      //only implement dgram sending.blockinque left NULL
-
-    dtp_tcontroler_init(dtp_ctx);
+    }
+    memset(dtp_ctx, 0, sizeof(dtp_layers_ctx));
+    assert(dtp_assembler_init(dtp_ctx, DTP_BLOCK_INFO_AUTO) == 0);
+    assert(dtp_scheduler_init(dtp_ctx, 0) == 0);      //only implement dgram sending.blockinque left NULL
+    assert(dtp_tcontroler_init(dtp_ctx) == 0);
 
     //quiche conf
 
-    const int dgramRecvQueueLen=20;
-    const int dgramSendQueueLen=20;
-    quiche_config * config=quiche_config_new(version);
-    dtp_ctx->tc_ctx->quic_config=config;
+    // const int dgramRecvQueueLen=20;
+    // const int dgramSendQueueLen=20;
+    // quiche_config * config=quiche_config_new(version);
+    // dtp_ctx->tc_ctx->quic_config=config;
   
      
-    quiche_config_load_cert_chain_from_pem_file(config, "./cert.crt");
-    quiche_config_load_priv_key_from_pem_file(config, "./cert.key");
+    // quiche_config_load_cert_chain_from_pem_file(config, "./cert.crt");
+    // quiche_config_load_priv_key_from_pem_file(config, "./cert.key");
 
-    quiche_config_set_application_protos(
-        config,
-        (uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
+    // quiche_config_set_application_protos(
+    //     config,
+    //     (uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
 
-    quiche_config_set_max_idle_timeout(config, 5000);
-    quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
-    quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
-    quiche_config_set_initial_max_data(config, 1000000000);
-    quiche_config_set_initial_max_stream_data_uni(config, 10000000);
-    quiche_config_set_initial_max_streams_uni(config, 40000);
-    quiche_config_set_initial_max_stream_data_bidi_local(config, 10000000);
-    quiche_config_set_initial_max_stream_data_bidi_remote(config, 10000000);
-    quiche_config_set_initial_max_streams_bidi(config, 40000);
-    quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
-    //test on dgram
-    quiche_config_enable_dgram(config, true, 20,20);
+    // quiche_config_set_max_idle_timeout(config, 5000);
+    // quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+    // quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+    // quiche_config_set_initial_max_data(config, 1000000000);
+    // quiche_config_set_initial_max_stream_data_uni(config, 10000000);
+    // quiche_config_set_initial_max_streams_uni(config, 40000);
+    // quiche_config_set_initial_max_stream_data_bidi_local(config, 10000000);
+    // quiche_config_set_initial_max_stream_data_bidi_remote(config, 10000000);
+    // quiche_config_set_initial_max_streams_bidi(config, 40000);
+    // quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
+    // //test on dgram
+    // quiche_config_enable_dgram(config, true, 20,20);
 
 
 
     return dtp_ctx;
 }
 
-void * dtp_layers_free(dtp_layers_ctx * dtp_ctx){
-    quiche_config_free(dtp_ctx->tc_ctx->quic_config);
+void dtp_layers_free(dtp_layers_ctx * dtp_ctx){
+    dtp_tcontroler_free(dtp_ctx);
+    dtp_scheduler_free(dtp_ctx); 
+    dtp_assembler_free(dtp_ctx);    
+    // quiche_config_free(dtp_ctx->tc_ctx->quic_config);
 }
 
 //send buf via scheduler

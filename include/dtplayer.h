@@ -107,10 +107,10 @@ void dtplMsgBufreset(dtplMsgbuf* msg_buffer);
 
 void dtplMsgBufrelease(dtplMsgbuf* msg_buffer);
 
-int dtp_connect(dtp_layers_ctx * dtp_ctx,const char *server_name,
-                            const uint8_t *scid, size_t scid_len,
-                            const struct sockaddr *to, size_t to_len,
-                            quiche_config *config);
+// int dtp_connect(dtp_layers_ctx * dtp_ctx,const char *server_name,
+//                             const uint8_t *scid, size_t scid_len,
+//                             const struct sockaddr *to, size_t to_len,
+//                             quiche_config *config);
 void dtp_conn_stats(dtp_layers_ctx *dtp_ctx, dtp_stats *out);
 
 void dtp_conn_on_timeout(dtp_tc_ctx * tc_ctx);
@@ -122,7 +122,7 @@ uint64_t dtp_conn_get_feedback(dtp_tc_ctx * tc_ctx,uint8_t * feedback);
 dtp_layers_ctx* dtp_layers_initnew_cli(uint32_t version);
 dtp_layers_ctx* dtp_layers_initnew_serv(uint32_t version);
 
-void * dtp_layers_free(dtp_layers_ctx * dtp_ctx);
+void dtp_layers_free(dtp_layers_ctx * dtp_ctx);
 
 ssize_t dtpl_conn_buf_send(dtp_layers_ctx *dtp_ctx,uint8_t * buf,uint64_t size,uint64_t priority,uint64_t deadline,int is_fragment);
 

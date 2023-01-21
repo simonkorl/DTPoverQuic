@@ -7,7 +7,7 @@
 
 #define max(a,b) (a > b ? a : b)
  
-dtp_assem_ctx* dtp_assembler_init(info_assemble_mode mode) {
+int dtp_assembler_init(dtp_layers_ctx* dtp_ctx, info_assemble_mode mode) {
     int ret = 0;
     
     dtp_assem_ctx* assemlay_ctx = (dtp_assem_ctx*) malloc(sizeof(dtp_assem_ctx));
@@ -22,8 +22,22 @@ dtp_assem_ctx* dtp_assembler_init(info_assemble_mode mode) {
         assemlay_ctx->historyArray= (rbinfoptr) malloc((assemlay_ctx->historyLen)*sizeof(r_binfo));
         assemlay_ctx->historyCurIndex=0;
         assemlay_ctx->hisCount=0;
-        //  assemlay_ctx->dtpctx=dtp_ctx;
+        // assemlay_ctx->dtpctx=dtp_ctx;
         assemlay_ctx->mode=mode;
+        dtp_ctx->assemlay_ctx = assemlay_ctx;
+    }
+    return ret;
+}
+
+int dtp_assembler_free(dtp_layers_ctx* dtp_ctx) {
+    int ret = 0;
+    if(dtp_ctx == NULL || dtp_ctx->assemlay_ctx == NULL) {
+        ret = -1;
+    } else {
+        if(dtp_ctx->assemlay_ctx->historyArray) {
+            free(dtp_ctx->assemlay_ctx->historyArray);
+        }
+        free(dtp_ctx->assemlay_ctx);
     }
     return ret;
 }

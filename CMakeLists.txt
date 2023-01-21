@@ -16,7 +16,7 @@ SET(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # ---- Fetch CPM ----
 
-set(CPM_DOWNLOAD_VERSION 0.32.0) 
+set(CPM_DOWNLOAD_VERSION 0.36.0) 
 set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
 if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
   message(STATUS "Downloading CPM.cmake v${CPM_DOWNLOAD_VERSION}")
@@ -99,61 +99,65 @@ target_compile_options(dtplayer-core PUBLIC
 SET_TARGET_PROPERTIES(dtplayer-core PROPERTIES VERSION 1.2 SOVERSION 1)
 
 # ---- example server
-add_executable(dtplayer-example-server examples/server.c)
-target_include_directories(dtplayer-example-server
+add_executable(server examples/server.c)
+target_include_directories(server
     PUBLIC
         include
+    PUBLIC
+        examples
     PUBLIC
         lib
 )
 
-target_link_directories(dtplayer-example-server
+target_link_directories(server
     PUBLIC
         ${PROJECT_BINARY_DIR}
 )
 
-target_link_libraries(dtplayer-example-server
+target_link_libraries(server
     PUBLIC
         ev # libev
         quiche
         dtplayer-core
         Threads::Threads
 )
-set_target_properties(dtplayer-example-server
+set_target_properties(server
     PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED YES
         C_EXTENSIONS YES)
-target_compile_options(dtplayer-example-server PRIVATE
+target_compile_options(server PRIVATE
     $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
     $<$<C_COMPILER_ID:MSVC>: >)
 # ---- example client
-add_executable(dtplayer-example-client examples/client.c)
-target_include_directories(dtplayer-example-client
+add_executable(client examples/client.c)
+target_include_directories(client
     PUBLIC
         include
+    PUBLIC
+        examples
     PUBLIC
         lib
 )
     
-target_link_directories(dtplayer-example-client
+target_link_directories(client
     PUBLIC
         ${PROJECT_BINARY_DIR}
 )
     
-target_link_libraries(dtplayer-example-client
+target_link_libraries(client
     PUBLIC
         ev # libev
         quiche
         dtplayer-core
         Threads::Threads
 )
-set_target_properties(dtplayer-example-client
+set_target_properties(client
     PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED YES
         C_EXTENSIONS YES)
-target_compile_options(dtplayer-example-client PRIVATE
+target_compile_options(client PRIVATE
     $<$<OR:$<C_COMPILER_ID:Clang>,$<C_COMPILER_ID:GNU>>: -Wpedantic -Wextra -Wall>
     $<$<C_COMPILER_ID:MSVC>: >)
 

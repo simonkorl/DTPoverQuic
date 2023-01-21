@@ -20,16 +20,18 @@
 #include "log_helper.h"
 #include <argp.h>
 #include <string.h>
+#include <assert.h>
 
 #include <time.h>
 
 #include "dtplayer.h"
 #include "dtp_structure.h"
+#include "block_util.h"
 /***** Argp configs *****/
 
 const char *argp_program_version = "dtptest-client 0.1";
 static char doc[] = "dtptest-client -- a simple DTP test client";
-static char args_doc[] = "SERVER_IP PORT";
+static char args_doc[] = "SERVER_IP PORT LOCAL_IP LOCAL_PORT";
 
 static struct argp_option options[] = {
     {"log", 'l', "FILE", 0, "Log to FILE instead of stderr"},
@@ -45,7 +47,9 @@ struct arguments {
   FILE *out_file;
   char *server_ip;
   char *server_port;
-  char * gm_on;
+  char *local_ip;
+  char *local_port;
+  char *gm_on;
 };
 
 static bool DIFFSERV_ENABLE = false;
@@ -76,21 +80,29 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     break;
   case ARGP_KEY_ARG:
     switch (state->arg_num) {
-    case 0: {
-      arguments->server_ip = arg;
-      break;
-    }
-    case 1: {
-      arguments->server_port = arg;
-      break;
-    }
-    case 2: {
-      arguments->gm_on = arg;
-      break;
-    }
-    default:
-      argp_usage(state);
-      break;
+      case 0: {
+        arguments->server_ip = arg;
+        break;
+      }
+      case 1: {
+        arguments->server_port = arg;
+        break;
+      }
+      case 2: {
+        arguments->local_ip = arg;
+        break;
+      }
+      case 3: {
+        arguments->local_port = arg;
+        break;
+      }
+      case 4: {
+        arguments->gm_on = arg;
+        break;
+      }
+      default:
+        argp_usage(state);
+        break;
     }
     break;
   case ARGP_KEY_END:
@@ -130,14 +142,20 @@ conn_io {
 
   int sock;
   int ai_family;
+  struct sockaddr* local_addr;
+  socklen_t local_addr_len;
 
   quiche_conn *conn;
   dtp_layers_ctx * dtp_ctx;
+
+  int cfg_len;
+  block_stats *blocks;
+  int blocks_len;
 };
 
 /***** utilites *****/
 
-static void debug_log(const char *line, void *argp) { log_error("%s", line); }
+static void debug_log(const char *line, void *argp) { log_trace("%s", line); }
 
 void set_tos(int ai_family, int sock, int tos) {
   if (!DIFFSERV_ENABLE)
@@ -169,7 +187,7 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
 
   while (1) {
     ssize_t written =
-        dtp_conn_send(conn_io->dtp_ctx->tc_ctx,out,MAX_DATAGRAM_SIZE);
+        quiche_conn_send(conn_io->conn, out, MAX_DATAGRAM_SIZE, &send_info);
 
     if (written == DTP_ERR_DONE) {
       log_debug("done writing");
@@ -181,10 +199,10 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
       return;
     }
 
-    set_tos(conn_io->ai_family, conn_io->sock, send_info.diffserv << 2);
+    // set_tos(conn_io->ai_family, conn_io->sock, send_info.diffserv << 2);
     ssize_t sent = sendto(conn_io->sock, out, written, 0,
                           (struct sockaddr *)&send_info.to, send_info.to_len);
-
+    
     if (sent != written) {
       log_error("failed to send %s", strerror(errno));
       return;
@@ -193,45 +211,45 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
     log_debug("sent %zd bytes", sent);
   }
 
-  double t = dtp_conn_timeout_as_nanos(conn_io->dtp_ctx->tc_ctx) / 1e9f;
+  double t = quiche_conn_timeout_as_nanos(conn_io->conn) / 1e9f;
   if (t != 0) {
     conn_io->timer.repeat = t;
     ev_timer_again(loop, &conn_io->timer);
   }
 
-  // struct timespec now = {0, 0};
-  // clock_gettime(CLOCK_REALTIME, &now);
+  struct timespec now = {0, 0};
+  clock_gettime(CLOCK_REALTIME, &now);
 
-  // double repeat = (send_info.at.tv_sec - now.tv_sec) +
-  //                 (send_info.at.tv_nsec - now.tv_nsec) / 1e9f;
-  // conn_io->pacer.repeat = repeat > 0 ? repeat : 0.001;
-  conn_io->pacer.repeat = 0.0001;
+  double repeat = (send_info.at.tv_sec - now.tv_sec) +
+                  (send_info.at.tv_nsec - now.tv_nsec) / 1e9f;
+  conn_io->pacer.repeat = repeat > 0 ? repeat : 0.001;
+  // conn_io->pacer.repeat = 0.0001;
   ev_timer_again(loop, &conn_io->pacer);
 }
 
 static void pacer_cb(struct ev_loop *loop, ev_timer *pacer, int revents) {
-  // log_debug("flush egress pace triggered");
+  log_debug("flush egress pace triggered");
   struct conn_io *conn_io = pacer->data;
   flush_egress(loop, conn_io);
 }
 
 static void recv_cb(EV_P_ ev_io *w, int revents) {
   // static bool req_sent = false;
+  log_debug("recv_cb");
 
   struct conn_io *conn_io = w->data;
 
   static uint8_t buf[MAX_BLOCK_SIZE];
 
   while (1) {
-
-    
     struct sockaddr_storage peer_addr;
     socklen_t peer_addr_len = sizeof(peer_addr);
     memset(&peer_addr, 0, peer_addr_len);
 
     ssize_t read = recvfrom(conn_io->sock, buf, sizeof(buf), 0,
                             (struct sockaddr *)&peer_addr, &peer_addr_len);
-
+    log_debug("read %ld bytes", read);
+    log_debug("recv_cb 1");
     if (read < 0) {
       if ((errno == EWOULDBLOCK) || (errno == EAGAIN)) {
         log_debug("recv would block");
@@ -243,16 +261,19 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
     }
 
     total_udp_bytes += read;
-/*
+
+    log_debug("recv_cb 2");
+
     quiche_recv_info recv_info = {
-        (struct sockaddr *)&peer_addr,
-
-        peer_addr_len,
-    };*/
+      .from=(struct sockaddr *)&peer_addr,
+      .from_len=peer_addr_len,
+      .to=conn_io->local_addr,
+      .to_len=conn_io->local_addr_len,
+    };
      
-    ssize_t done = dtp_conn_recv(conn_io->dtp_ctx->tc_ctx,buf,read,  &peer_addr, peer_addr_len);
+    ssize_t done = quiche_conn_recv(conn_io->conn, buf, read, &recv_info);
     //quiche_conn_recv(conn_io->conn, buf, read, &recv_info);
-
+    log_debug("recv_cb 3");
     if (done < 0) {
       log_error("failed to process packet %ld", done);
       continue;
@@ -263,16 +284,16 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
 
   log_debug("done reading");
   //todo:hide all var behind dtp?
-  if ( dtp_conn_is_closed(conn_io->dtp_ctx->tc_ctx) ) {
+  if(quiche_conn_is_closed(conn_io->conn)) {
     log_info("connection closed");
 
-    dtp_stats stats;
+    quiche_stats stats;
 
-    dtp_conn_stats(conn_io->dtp_ctx,&stats);
+    quiche_conn_stats(conn_io->dtp_ctx, &stats);
 
-    log_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=%" PRIu64
-             "ns total_bytes=%zu total_udb_bytes=%zu total_time=%zu",
-             stats.quiche_stat.recv, stats.quiche_stat.sent, stats.quiche_stat.lost, stats.quiche_stat.rtt, total_bytes,
+    log_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=?\
+             ns total_bytes=%zu total_udb_bytes=%zu total_time=%zu",
+             stats.recv, stats.sent, stats.lost, total_bytes,
              total_udp_bytes, ended_at - started_at);
     fflush(NULL);
 
@@ -280,75 +301,104 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
     return;
   }
 
-  // if (quiche_conn_is_established(conn_io->conn) && !req_sent) {
-  //   const uint8_t *app_proto;
-  //   size_t app_proto_len;
+  if (quiche_conn_is_established(conn_io->conn)) {
+    if(!QUIC_ENABLE) {
+      static uint8_t block_buf[MAX_BLOCK_SIZE];
+      dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
 
-  //   quiche_conn_application_proto(conn_io->conn, &app_proto, &app_proto_len);
+      for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++) {
+        uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
+        log_debug("Dgram offset = %lu",offstart);
+        for(int i=0;i<MAX_DATAGRAM_SIZE;i++) {
+          printf("%c",block_buf[offstart+i]);
+        }
+      }
 
-  //   log_info("connection established: %.*s", (int)app_proto_len, app_proto);
+      // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
 
-  //   const static uint8_t r[] = "GET /index.html\r\n";
-  //   if (quiche_conn_stream_send(conn_io->conn, 4, r, sizeof(r), true) < 0) {
-  //     log_error("failed to send HTTP request\n");
-  //     return;
-  //   }
+      // dtp_tc_control_flow_send(conn_io->dtp_ctx, buf, sizeof(buf),true);
+    }
 
-  //   log_debug("sent HTTP request\n");
-
-  //   req_sent = true;
-  // }
-
-
- 
-
-
-  if (dtp_conn_is_established(conn_io->dtp_ctx)) {
-
-    
-    
-  static uint8_t block_buf[MAX_BLOCK_SIZE];
-  dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
-
-  for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++){
-    uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
-    log_debug("Dgram offset = %lu",offstart);
-    for(int i=0;i<MAX_DATAGRAM_SIZE;i++)
-      printf("%c",block_buf[offstart+i]);
-    
-  }
-
-  // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
-
-  // dtp_tc_control_flow_send(conn_io->dtp_ctx, buf, sizeof(buf),true);
   
     uint64_t s = 0;
     quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);
 
     while (quiche_stream_iter_next(readable, &s)) {
       log_debug("stream %" PRIu64 " is readable", s);
- printf("\n1d");
       bool fin = false;
-       ssize_t recv_len =quiche_conn_stream_recv(conn_io->conn, s, buf, sizeof(buf), &fin);
-//dgram try
-//problem:How can I formed them into an totally shaped block?
-//if a divided block:need block id
-//if a total block:
-//
-    //get feed back
-    if (recv_len < 0) {
-                break;
-  }
-    if(s==conn_io->dtp_ctx->tc_ctx->control_stream_id){
-      uint64_t rtt=dtp_conn_get_feedback(conn_io->dtp_ctx->tc_ctx,buf);
-      printf("rtt %lu",rtt);
-    }
+      ssize_t recv_len = quiche_conn_stream_recv(conn_io->conn, s, buf, sizeof(buf), &fin);
+      //dgram try
+      //problem:How can I formed them into an totally shaped block?
+      //if a divided block:need block id
+      //if a total block:
+      //
+      //get feed back
+      if (recv_len < 0) {
+        break;
+      }
+      // TODO: control flow feedback?
+      // if(s == conn_io->dtp_ctx->tc_ctx->control_stream_id){
+      //   uint64_t rtt=dtp_conn_get_feedback(conn_io->dtp_ctx->tc_ctx,buf);
+      //   printf("rtt %lu",rtt);
+      // }
 
-        total_bytes += recv_len;
-      printf("收到数据->    %.*s", (int) recv_len, buf);
+      total_bytes += recv_len;
+      //  log_debug("收到数据(%d)->%.*s\n", (int)recv_len, buf);
+      log_debug("recv %ld bytes", recv_len);
+
+      if(QUIC_ENABLE) {
+        if(s == QUIC_INFO_STREAM) {
+          memcpy(&conn_io->cfg_len, buf, sizeof(int));
+          log_info("recv cfg_len: %d", conn_io->cfg_len);
+          conn_io->blocks = calloc(conn_io->cfg_len, sizeof(block_stats));
+          conn_io->blocks_len = 0;
+        } else {
+          long block_id = ((s - 1) / 4) - 1;
+          assert(conn_io->blocks);
+          if(!conn_io->blocks[block_id].has_hdr) {
+            int hdr_len = decode_block_hdr(buf, MAX_BLOCK_SIZE, &conn_io->blocks[block_id].block_hdr);
+            // log_debug("hdr_len: %d", hdr_len);
+            assert(hdr_len == sizeof(quiche_block));
+            conn_io->blocks[block_id].has_hdr = true;
+            log_info("get hdr for %ld: %ld, %ld, %ld, %ld, %ld",
+              block_id,
+              conn_io->blocks[block_id].block_hdr.block_id,
+              conn_io->blocks[block_id].block_hdr.size,
+              conn_io->blocks[block_id].block_hdr.priority,
+              conn_io->blocks[block_id].block_hdr.deadline,
+              conn_io->blocks[block_id].block_hdr.start_at
+            );
+            conn_io->blocks[block_id].recv_size += recv_len - hdr_len;
+          } else {
+            conn_io->blocks[block_id].recv_size += recv_len;
+          }
+        }
+      }
       if (fin) {
         ended_at = get_current_usec();
 
+        if(QUIC_ENABLE) {
+          long block_id = ((s - 1) / 4) - 1;
+          if(s != QUIC_INFO_STREAM) {
+            log_debug("recv_size: %ld, block_size: %ld", 
+                      conn_io->blocks[block_id].recv_size,
+                      conn_io->blocks[block_id].block_hdr.size);
+            assert(conn_io->blocks[block_id].recv_size == conn_io->blocks[block_id].block_hdr.size);
+            conn_io->blocks[block_id].bct = (ended_at - conn_io->blocks[block_id].block_hdr.start_at) / 1000;
+            dump_file("%ld, %ld, %ld, %ld, %ld, %ld\n", 
+                        s, 
+                        conn_io->blocks[block_id].bct,
+                        conn_io->blocks[block_id].block_hdr.size,
+                        conn_io->blocks[block_id].block_hdr.priority,
+                        conn_io->blocks[block_id].block_hdr.deadline,
+                        ended_at - started_at);
+            conn_io->blocks_len += 1;
+            if(conn_io->blocks_len >= conn_io->cfg_len) {
+              log_info("block recv done, close the connection");
+              quiche_conn_close(conn_io->conn, true, 0, "done", sizeof("done"));
+            }
+          }
+        }
         // TODO: add stats
         // uint64_t bct = quiche_conn_bct(conn_io->conn, s);
         // quiche_block block_info;
@@ -357,9 +407,9 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
         // dump_file("%ld,%ld,%ld,%ld,%ld,%ld\n", s, bct, block_info.size,
         //         block_info.priority, block_info.deadline,
         //           ended_at - started_at);
+        // dump_file("%ld, ??, ??, ??, ??, %ld\n", s, ended_at - started_at);
       }
     }
-
     quiche_stream_iter_free(readable);
   }
 
@@ -368,20 +418,20 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
 
 static void timeout_cb(EV_P_ ev_timer *w, int revents) {
   struct conn_io *conn_io = w->data;
-  dtp_conn_on_timeout(conn_io->dtp_ctx->tc_ctx);
+  quiche_conn_on_timeout(conn_io->conn);
 
   log_debug("timeout");
 
   flush_egress(loop, conn_io);
 
-  if (dtp_conn_is_closed(conn_io->dtp_ctx->tc_ctx)) {
-    dtp_stats stats;
+  if (quiche_conn_is_closed(conn_io->conn)) {
+    quiche_stats stats;
 
-    dtp_conn_stats(conn_io->dtp_ctx, &stats);
+    quiche_conn_stats(conn_io->conn, &stats);
 
-   log_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=%" PRIu64
-             "ns total_bytes=%zu total_udb_bytes=%zu total_time=%zu",
-             stats.quiche_stat.recv, stats.quiche_stat.sent, stats.quiche_stat.lost, stats.quiche_stat.rtt, total_bytes,
+    log_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=?\
+             ns total_bytes=%zu total_udb_bytes=%zu total_time=%zu",
+             stats.recv, stats.sent, stats.lost, total_bytes,
              total_udp_bytes, ended_at - started_at);
     fflush(NULL);
 
@@ -400,33 +450,72 @@ int main(int argc, char *argv[]) {
                                  .ai_socktype = SOCK_DGRAM,
                                  .ai_protocol = IPPROTO_UDP};
 
-  dtp_enable_debug_logging(debug_log, NULL);
+  quiche_enable_debug_logging(debug_log, NULL);
 
-  struct addrinfo *server;
-  int err = getaddrinfo(args.server_ip, args.server_port, &hints, &server);
-  if (err != 0) {
-    log_error("getaddrinfo: %s", gai_strerror(err));
-    return -1;
+  struct addrinfo *peer;
+    if (getaddrinfo(args.server_ip, args.server_port, &hints, &peer) != 0) {
+        log_error("failed to resolve host");
+        freeaddrinfo(peer);
+        return -1;
+    }
+
+  struct addrinfo *local;
+  if (getaddrinfo(args.local_ip, args.local_port, &hints, &local) != 0) {
+      log_error("failed to resolve local");
+      freeaddrinfo(local);
+      return -1;
   }
 
   int sock =
-      socket(server->ai_family, server->ai_socktype, server->ai_protocol);
+      socket(local->ai_family, SOCK_DGRAM | SOCK_NONBLOCK, 0);
   if (sock < 0) {
     log_error("create socket");
     return -1;
   }
 
-  if (fcntl(sock, F_SETFL, O_NONBLOCK) < 0) {
+  if (bind(sock, local->ai_addr, local->ai_addrlen) != 0) {
     log_error("fcntl");
     return -1;
   }
 
-  dtp_layers_ctx * dtp_ctx =dtp_layers_initnew_cli(0xbabababa);
-  if (dtp_ctx == NULL) {
-     log_error("failed to create dtp_context");
-
-     return -1;
+  if (connect(sock, peer->ai_addr, peer->ai_addrlen) != 0) {
+    perror("failed to connect socket");
+    return -1;
   }
+
+  quiche_config *config = quiche_config_new(0xbabababa);
+  if (config == NULL) {
+    fprintf(stderr, "failed to create config\n");
+    return -1;
+  }
+  
+  quiche_config_set_application_protos(config,(uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
+
+  const int dgramRecvQueueLen=20;
+  const int dgramSendQueueLen=20;
+  quiche_config_set_max_idle_timeout(config, 10000);
+  quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+  quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+  quiche_config_set_initial_max_data(config, 1000000000);
+  quiche_config_set_initial_max_stream_data_uni(config, 1000000000);
+  quiche_config_set_initial_max_streams_uni(config, 1000000000);
+  quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
+  quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
+  quiche_config_set_initial_max_streams_bidi(config, 1000000000);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
+  //test on dgram
+  quiche_config_enable_dgram(config, true, dgramRecvQueueLen,dgramSendQueueLen);
+
+  if (getenv("SSLKEYLOGFILE")) {
+    quiche_config_log_keys(config);
+  }
+  // init dtp layer
+  dtp_layers_ctx * dtp_ctx = dtp_layers_initnew_cli(0xbabababa);
+  if (dtp_ctx == NULL) {
+    log_error("failed to create dtp_context");
+    return -1;
+  }
+  dtp_ctx->tc_ctx->quic_config=config;
  
   uint8_t scid[LOCAL_CONN_ID_LEN];
   int rng = open("/dev/urandom", O_RDONLY);
@@ -441,12 +530,19 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  dtp_connect(dtp_ctx,args.server_ip, (const uint8_t *)scid, sizeof(scid),server->ai_addr, server->ai_addrlen, dtp_ctx->tc_ctx->quic_config);
-
-  if (dtp_ctx->tc_ctx->quic_conn == NULL) {
+  quiche_conn *conn = 
+    quiche_connect(args.server_ip, 
+                   scid, LOCAL_CONN_ID_LEN, 
+                   local->ai_addr, local->ai_addrlen,
+                   peer->ai_addr, peer->ai_addrlen, 
+                   config);
+  if (conn == NULL) {
     log_error("failed to create connection");
     return -1;
   }
+  dtp_ctx->quic_conn = conn;
+  dtp_ctx->tc_ctx->quic_conn = conn;
+
 
   dump_file("block_id,bct,size,priority,deadline,duration\n");
   started_at = get_current_usec();
@@ -458,9 +554,12 @@ int main(int argc, char *argv[]) {
   }
 
   conn_io->sock = sock;
-  conn_io->ai_family = server->ai_family;
-  conn_io->conn = dtp_ctx->tc_ctx->quic_conn;
-  conn_io->dtp_ctx=dtp_ctx;
+  conn_io->ai_family = peer->ai_family;
+  conn_io->local_addr = local->ai_addr;
+  conn_io->local_addr_len = local->ai_addrlen;
+  conn_io->conn = conn;
+  conn_io->dtp_ctx = dtp_ctx;
+
   ev_io watcher;
 
   struct ev_loop *loop = ev_default_loop(0);
@@ -479,11 +578,14 @@ int main(int argc, char *argv[]) {
 
   ev_loop(loop, 0);
 
-  freeaddrinfo(server);
+  freeaddrinfo(peer);
+  freeaddrinfo(local);
 
-  quiche_conn_free(conn_io->dtp_ctx->quic_conn);
-
-  //quiche_config_free(config);
+  quiche_conn_free(conn_io->conn);
+  quiche_config_free(config);
+  dtp_layers_free(dtp_ctx);
+  free(conn_io->blocks);
+  free(conn_io);
 
   return 0;
 }

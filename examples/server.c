@@ -18,6 +18,7 @@
 #include "dtp_config.h"
 #include "log_helper.h"
 #include <quiche.h>
+#include <assert.h>
 
 #include <argp.h>
 #include <string.h>
@@ -25,12 +26,12 @@
 
 #include "dtplayer.h"
 #include "dtp_structure.h"
-
+#include "block_util.h"
 /***** Argp configs *****/
 
 const char *argp_program_version = "dtptest-server 0.1";
 static char doc[] = "dtptest-server -- a simple DTP test server";
-static char args_doc[] = "SERVER_IP PORT DTP_TRACE_FILE";
+static char args_doc[] = "LOCAL_IP LOCAL_PORT DTP_TRACE_FILE";
 
 static struct argp_option options[] = {
     {"log", 'l', "FILE", 0, "Log to FILE instead of stderr"},
@@ -46,8 +47,8 @@ static struct argp_option options[] = {
 struct arguments {
   FILE *log_file;
   FILE *out_file;
-  char *server_ip;
-  char *server_port;
+  char *local_ip;
+  char *local_port;
   char *dtp_trace_file;
   char * gm_on;
 };
@@ -81,11 +82,11 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
   case ARGP_KEY_ARG:
     switch (state->arg_num) {
     case 0: {
-      arguments->server_ip = arg;
+      arguments->local_ip = arg;
       break;
     }
     case 1: {
-      arguments->server_port = arg;
+      arguments->local_port = arg;
     }
     case 2:
       arguments->dtp_trace_file = arg;
@@ -131,6 +132,9 @@ struct connections {
   int sock;
   int ai_family;
 
+  struct sockaddr_storage *local_addr;
+  socklen_t local_addr_len;
+
   struct conn_io *h;
 };
 
@@ -160,6 +164,13 @@ struct conn_io {
 static quiche_config *config = NULL;
 
 static struct connections *conns = NULL;
+
+uint64_t start_timestamp = 0;
+uint64_t end_timestamp = 0;
+
+uint64_t send_bytes = 0;
+uint64_t complete_bytes = 0;
+uint64_t good_bytes = 0;
 
 /***** utilites *****/
 
@@ -217,7 +228,7 @@ static uint8_t *gen_cid(uint8_t *cid, size_t cid_len) {
   return cid;
 }
 
-static void debug_log(const char *line, void *argp) { log_info("%s", line); }
+static void debug_log(const char *line, void *argp) { log_trace("%s", line); }
 
 void set_tos(int ai_family, int sock, int tos) {
   if (!DIFFSERV_ENABLE)
@@ -240,6 +251,8 @@ void set_tos(int ai_family, int sock, int tos) {
   }
 }
 
+
+
 /***** callbacks *****/
 
 static void timeout_cb(struct ev_loop *loop, ev_timer *w, int revents);
@@ -250,45 +263,77 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
                                    uint8_t *odcid, size_t odcid_len,
                                    struct sockaddr_storage *peer_addr,
                                    socklen_t peer_addr_len) {
+  log_debug("enter create_conn");
   struct conn_io *conn_io = calloc(1, sizeof(*conn_io));
   if (conn_io == NULL) {
     log_error("failed to allocate connection IO");
     return NULL;
   }
-  //set up config...
-    dtp_layers_ctx * dtp_ctx =dtp_layers_initnew_serv(QUICHE_PROTOCOL_VERSION);
-    if (dtp_ctx == NULL) {
-     log_error("failed to create dtp_context");
+  // int rng = open("/dev/urandom", O_RDONLY);
+  // if (rng < 0) {
+  //     perror("failed to open /dev/urandom");
+  //     return NULL;
+  // }
 
-     return -1;
+  // ssize_t rand_len = read(rng, conn_io->cid, LOCAL_CONN_ID_LEN);
+  // if (rand_len < 0) {
+  //     perror("failed to create connection ID");
+  //     return NULL;
+  // }
+  // log_debug("before accept");
+  // log_debug("conn_io->cid: ");
+  // for(int i = 0; i < LOCAL_CONN_ID_LEN; i++) {
+  //   fprintf(stderr, "%x", conn_io->cid[i]);
+  // }
+  // fprintf(stderr, "\n");
+  // log_debug("scid: ");
+  // for(int i = 0; i < scid_len; i++) {
+  //   fprintf(stderr, "%x", scid[i]);
+  // }
+  // fprintf(stderr, "\n");
+  // log_debug("odcid: ");
+  // for(int i = 0; i < odcid_len; i++) {
+  //   fprintf(stderr, "%x", odcid[i]);
+  // }
+  // fprintf(stderr, "\n");
+  memcpy(conn_io->cid, scid, scid_len);
+  quiche_conn *conn = quiche_accept(scid, scid_len, 
+                                    odcid, odcid_len,
+                                    conns->local_addr, conns->local_addr_len,
+                                    peer_addr, peer_addr_len,
+                                    config);
+  if (conn == NULL) {
+      fprintf(stderr, "failed to create connection\n");
+      return NULL;
   }
-  conn_io->dtp_ctx=dtp_ctx;
-
-  if (scid_len != LOCAL_CONN_ID_LEN) {
-    log_error("failed, scid length too short");
+  log_debug("before dtp_layer");
+  // init dtp_layer_ctx
+  dtp_layers_ctx * dtp_ctx = dtp_layers_initnew_serv(QUICHE_PROTOCOL_VERSION);
+  if (dtp_ctx == NULL) {
+    log_error("failed to create dtp_context");
+    return -1;
   }
-
-  memcpy(conn_io->cid, scid, LOCAL_CONN_ID_LEN);
-
-  int s=dtp_accept(conn_io->dtp_ctx,conn_io->cid, LOCAL_CONN_ID_LEN, odcid, odcid_len,
-                    (struct sockaddr *)peer_addr, peer_addr_len, config);
-
-  if (conn_io->dtp_ctx->quic_conn == NULL) {
-    log_error("failed to create connection");
-    return NULL;
-  }
-
+  log_debug("after dtp layer");
+  conn_io->dtp_ctx = dtp_ctx;
   conn_io->sock = conns->sock;
-  conn_io->conn = conn_io->dtp_ctx->quic_conn;
+  conn_io->conn = conn;
+  // * we move some dtp_ctx init outside the function
+  conn_io->dtp_ctx->quic_conn = conn;
+  log_debug("ctx: %p", conn_io->dtp_ctx->tc_ctx);
+  conn_io->dtp_ctx->tc_ctx->quic_conn = conn;
+  conn_io->dtp_ctx->tc_ctx->quic_config = config;
+  log_debug("before copying");
 
   memcpy(&conn_io->peer_addr, peer_addr, peer_addr_len);
   conn_io->peer_addr_len = peer_addr_len;
+  log_debug("after copying");
 
   dtp_config *cfgs = parse_dtp_config(args.dtp_trace_file, &conn_io->cfg_len);
   if (!cfgs || conn_io->cfg_len <= 0) {
     log_error("failed to parse dtp config");
     return NULL;
   }
+  log_debug("after parse config");
   conn_io->cfgs = cfgs;
   conn_io->send_round = -1;
 
@@ -314,8 +359,9 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
   quiche_send_info send_info;
 
   while (1) {
+    log_debug("enter flush");
     ssize_t written =
-        dtp_conn_send(conn_io->dtp_ctx->tc_ctx, out, sizeof(out));
+        quiche_conn_send(conn_io->conn, out, sizeof(out), &send_info);
 
     if (written == DTP_ERR_DONE) {
       log_debug("done writing");
@@ -327,8 +373,8 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
       return;
     }
 
-    set_tos(conn_io->peer_addr.ss_family, conn_io->sock,
-            send_info.diffserv << 2);
+    // set_tos(conn_io->peer_addr.ss_family, conn_io->sock,
+    //         send_info.diffserv << 2);
     ssize_t sent = sendto(conn_io->sock, out, written, 0,
                           (struct sockaddr *)&send_info.to, send_info.to_len);
 
@@ -340,75 +386,96 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
     log_debug("sent %zd bytes", sent);
   }
 
-  double t = dtp_conn_timeout_as_nanos(conn_io->dtp_ctx->tc_ctx) / 1e9f;
+  double t = quiche_conn_timeout_as_nanos(conn_io->conn) / 1e9f;
   conn_io->timer.repeat = t;
   ev_timer_again(loop, &conn_io->timer);
 
-  // struct timespec now = {0, 0};
-  // clock_gettime(CLOCK_REALTIME, &now);
+  struct timespec now = {0, 0};
+  clock_gettime(CLOCK_REALTIME, &now);
 
-  // double repeat = (send_info.at.tv_sec - now.tv_sec) +
-  //                         (send_info.at.tv_nsec - now.tv_nsec) / 1e9f;
-  // conn_io->pacer.repeat = repeat > 0 ? repeat : 0.001;
-  conn_io->pacer.repeat = 0.0001;
+  double repeat = (send_info.at.tv_sec - now.tv_sec) +
+                          (send_info.at.tv_nsec - now.tv_nsec) / 1e9f;
+  conn_io->pacer.repeat = repeat > 0 ? repeat : 0.001;
+  // conn_io->pacer.repeat = 0.0001;
   ev_timer_again(loop, &conn_io->pacer);
+  log_debug("leave flush");
 }
 
 static void pacer_cb(struct ev_loop *loop, ev_timer *pacer, int revents) {
-  // log_debug("flush egress pace triggered");
+  log_debug("flush egress pace triggered");
   struct conn_io *conn_io = pacer->data;
   flush_egress(loop, conn_io);
 }
 
 static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   struct conn_io *conn_io = w->data;
-   printf("\n3d");
-  if (dtp_conn_is_established(conn_io->dtp_ctx)) {
-    float send_time_gap = conn_io->cfgs[conn_io->send_round].send_time_gap;
-    static uint8_t buf[MAX_BLOCK_SIZE];
+  static size_t send_offset = 0;
+  log_debug("enter sender_cb");
+  if (quiche_conn_is_established(conn_io->conn)) {
+    log_debug("established");
+    for(;conn_io->send_round < conn_io->cfg_len; conn_io->send_round++) {
+      float send_time_gap = conn_io->cfgs[conn_io->send_round].send_time_gap;
+      static uint8_t buf[MAX_BLOCK_SIZE];
 
-    quiche_block block = {
-        .size = conn_io->cfgs[conn_io->send_round].size,
-        .priority = conn_io->cfgs[conn_io->send_round].priority,
-        .deadline = conn_io->cfgs[conn_io->send_round].deadline,
-    };
+      quiche_block block = {
+          .block_id = conn_io->send_round,
+          .size = conn_io->cfgs[conn_io->send_round].size,
+          .priority = conn_io->cfgs[conn_io->send_round].priority,
+          .deadline = conn_io->cfgs[conn_io->send_round].deadline,
+          .start_at = get_current_usec(),
+      };
 
-    int stream_id = 4 * (conn_io->send_round + 1) + 1;
-   // log_info("send stream %d", stream_id);
-    ssize_t sent = 0;
-     printf("\n1d");
+      int stream_id = 4 * (conn_io->send_round + 1) + 1;
+      log_debug("send stream %d", stream_id);
+      ssize_t sent = 0;
 
-    if (QUIC_ENABLE) {
-      printf("\n5d");
-      sent = quiche_conn_stream_send(conn_io->conn, stream_id, buf,
-                                             block.size, true);
-    } else {
-     
-          //  sent = quiche_conn_block_send(conn_io->conn, stream_id, buf,block.size, true, &block);
-    static uint8_t outs[]="buf,block.size";
-    memset(buf,(conn_io->send_round%10)-'0',MAX_BLOCK_SIZE);
-    sent = dtpl_conn_buf_send( conn_io->dtp_ctx, buf, 
-                                                        conn_io->cfgs[conn_io->send_round].size, 
-                                                        conn_io->cfgs[conn_io->send_round].priority, 
-                                                          conn_io->cfgs[conn_io->send_round].deadline,1);
- 
-    
-
-    
-
+      if (QUIC_ENABLE) {
+        // printf("\n5d");
+        int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
+        assert(hdr_len > 0);
+        sent = quiche_conn_stream_send(conn_io->conn, stream_id, buf,
+                                              hdr_len + block.size - send_offset, true);
+                                        
+        log_info("%ld, %ld, %ld, %ld", 
+                  block.size,
+                  block.priority,
+                  block.deadline,
+                  block.start_at
+                  );
+        if(sent > 0 && sent + send_offset < block.size + hdr_len) {
+          log_debug("failed to send block %d completely: sent %zd",
+                  conn_io->send_round, sent);
+          log_debug("expect: %ld, sent: %ld, offset+sent: %ld", block.size + hdr_len, sent, sent+send_offset);
+          send_offset += sent;
+          break;
+        } else if(sent < 0) {
+          log_debug("failed to send block %d : sent %zd",
+                  conn_io->send_round, sent);
+          break;
+        }
+      } else {
+        // sent = quiche_conn_block_send(conn_io->conn, stream_id, buf,block.size, true, &block);
+        static uint8_t outs[]="buf,block.size";
+        memset(buf,(conn_io->send_round%10)-'0',MAX_BLOCK_SIZE);
+        sent = dtpl_conn_buf_send(conn_io->dtp_ctx, buf, 
+                                    conn_io->cfgs[conn_io->send_round].size, 
+                                    conn_io->cfgs[conn_io->send_round].priority, 
+                                    conn_io->cfgs[conn_io->send_round].deadline,
+                                    true);
+      }
+      if(send_time_gap < 0.0001) {
+        send_offset = 0;
+        continue;
+      } else {
+        conn_io->sender.repeat = send_time_gap;
+        ev_timer_again(loop, &conn_io->sender);
+        conn_io->send_round += 1;
+        send_offset = 0;
+        break;
+      }
     }
-  printf("\n8d");
-    if (sent != block.size) {
-      log_debug("failed to send block %d completely: sent %zd",
-                conn_io->send_round, sent);
-    }
-
-    conn_io->send_round++;
     if (conn_io->send_round >= conn_io->cfg_len) {
       ev_timer_stop(loop, &conn_io->sender);
-    } else {
-      conn_io->sender.repeat = send_time_gap;
-      ev_timer_again(loop, &conn_io->sender);
     }
   }
 
@@ -416,6 +483,7 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 }
 
 static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
+  log_debug("enter recv cb");
   struct conn_io *tmp, *conn_io = NULL;
 
   static uint8_t buf[MAX_BLOCK_SIZE];
@@ -427,6 +495,8 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
     memset(&peer_addr, 0, peer_addr_len);
 
     ssize_t read = recvfrom(conns->sock, buf, sizeof(buf), 0,(struct sockaddr *)&peer_addr, &peer_addr_len);
+
+    log_debug("read %ld bytes", read);
 
     if (read < 0) {
       if ((errno == EWOULDBLOCK) || (errno == EAGAIN)) {
@@ -453,9 +523,9 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
     uint8_t token[MAX_TOKEN_LEN];
     size_t token_len = sizeof(token);
 
-    int rc =
-        dtp_conn_check(buf, read, LOCAL_CONN_ID_LEN, &version, &type, scid,
-                           &scid_len, dcid, &dcid_len, token, &token_len);
+    int rc = quiche_header_info(buf, read, LOCAL_CONN_ID_LEN, &version,
+                                    &type, scid, &scid_len, dcid, &dcid_len,
+                                    token, &token_len);
     if (rc < 0) {
       log_error("failed to parse header: %d", rc);
       continue;
@@ -464,24 +534,26 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
     HASH_FIND(hh, conns->h, dcid, dcid_len, conn_io);
 
     if (conn_io == NULL) {
-      if (!dtp_version_is_supported(version)) {
+      if (!quiche_version_is_supported(version)) {
         log_debug("version negotiation");
-
-        ssize_t written = dtp_negotiate_version(scid, scid_len, dcid,
-                                                   dcid_len, out, sizeof(out));
+        ssize_t written = quiche_negotiate_version(
+                    scid, scid_len, dcid, dcid_len, out, sizeof(out));
 
         if (written < 0) {
           log_error("failed to create vneg packet: %zd", written);
           continue;
         }
 
-        set_tos(conns->ai_family, conns->sock, 5 << 5);
-        ssize_t sent = sendto(conns->sock, out, written, 0,
-                              (struct sockaddr *)&peer_addr, peer_addr_len);
+        // set_tos(conns->ai_family, conns->sock, 5 << 5);
+        ssize_t sent =
+                    sendto(conns->sock, out, written, 0,
+                           (struct sockaddr *)&peer_addr, peer_addr_len);
         if (sent != written) {
           log_error("failed to send %s", strerror(errno));
           continue;
         }
+
+        send_bytes += sent;
 
         log_debug("sent %zd bytes", sent);
         continue;
@@ -508,7 +580,7 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
           continue;
         }
 
-        set_tos(conns->ai_family, conns->sock, 5 << 5);
+        // set_tos(conns->ai_family, conns->sock, 5 << 5);
         ssize_t sent = sendto(conns->sock, out, written, 0,
                               (struct sockaddr *)&peer_addr, peer_addr_len);
         if (sent != written) {
@@ -533,14 +605,18 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
         continue;
       }
     }
-/*
+
+    log_debug("have conn_io");  
     quiche_recv_info recv_info = {
-        (struct sockaddr *)&peer_addr,
+      .from=(struct sockaddr *)&peer_addr,
+      .from_len=peer_addr_len,
+      .to=conns->local_addr,
+      .to_len=conns->local_addr_len,
+    };
 
-        peer_addr_len,
-    };*/
+    ssize_t done = quiche_conn_recv(conn_io->conn, buf, read, &recv_info);
 
-    ssize_t done = dtp_conn_recv(conn_io->dtp_ctx->tc_ctx, buf, read,&peer_addr,peer_addr_len);
+    log_debug("after recv");
 
     if (done < 0) {
       log_error("failed to process packet: %zd", done);
@@ -549,37 +625,48 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
 
     log_debug("recv %zd bytes", done);
 
-    if (dtp_conn_is_established(conn_io->dtp_ctx)) {
+    if(quiche_conn_is_established(conn_io->conn)) {
+      log_debug("established");
       if (conn_io->send_round == -1) {
         conn_io->send_round = 0;
         conn_io->sender.repeat = conn_io->cfgs[0].send_time_gap;
         ev_timer_again(loop, &conn_io->sender);
+        if(QUIC_ENABLE) {
+          memcpy(out, &conn_io->cfg_len, sizeof(int));
+          quiche_conn_stream_send(conn_io->conn, QUIC_INFO_STREAM, out, sizeof(int), false);
+        } else {
+          // TODO
+        }
       }
 
       uint64_t s = 0;
 
       quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);
 
-       static uint8_t block_buf[MAX_BLOCK_SIZE];
-      dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
-      
-     for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++){
-        uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
-     log_debug("Dgram offset = %lu",offstart);
-     for(int i=0;i<MAX_DATAGRAM_SIZE;i++)
-      printf("%c",block_buf[offstart+i]);
-    
-  }
+      if(!QUIC_ENABLE) {
+        static uint8_t block_buf[MAX_BLOCK_SIZE];
+        dtp_tc_conn_block_recv(conn_io->dtp_ctx, block_buf);
 
-  // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
-  // dtp_tc_control_flow_send(conn_io->dtp_ctx,block_buf,sizeof(block_buf),false);
-  
+
+        for(uint64_t offset=0; offset<(conn_io->dtp_ctx->tc_ctx->off_array_num); offset++) {
+          uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
+          log_debug("Dgram offset = %lu",offstart);
+          for(int i=0;i<MAX_DATAGRAM_SIZE;i++) {
+            printf("%c",block_buf[offstart+i]);
+          }
+        }
+
+        // TODO: add control flow send
+        // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
+        // dtp_tc_control_flow_send(conn_io->dtp_ctx,block_buf,sizeof(block_buf),false);
+      }
+
       while (quiche_stream_iter_next(readable, &s)) {
         log_debug("stream %" PRIu64 " is readable", s);
 
         bool fin = false;
         ssize_t recv_len =
-            quiche_conn_stream_recv(conn_io->conn, s, buf, sizeof(buf), &fin);
+          quiche_conn_stream_recv(conn_io->conn, s, buf, sizeof(buf), &fin);
         if (recv_len < 0) {
           break;
         }
@@ -589,16 +676,17 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
     }
   }
 
+  log_debug("outside loop");
   HASH_ITER(hh, conns->h, conn_io, tmp) {
+    log_debug("inside hash");
     flush_egress(loop, conn_io);
 
-    if (dtp_conn_is_closed(conn_io->dtp_ctx->tc_ctx)) {
-      dtp_stats stats;
+    if (quiche_conn_is_closed(conn_io->conn)) {
+      quiche_stats stats;
 
-      dtp_conn_stats(conn_io->dtp_ctx, &stats);
-      dump_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=%" PRIu64
-                "ns cwnd=%zu\n",
-                stats.quiche_stat.recv, stats.quiche_stat.sent, stats.quiche_stat.lost, stats.quiche_stat.rtt, stats.quiche_stat.cwnd);
+      quiche_conn_stats(conn_io->conn, &stats);
+      dump_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=?ns cwnd=??\n",
+                stats.recv, stats.sent, stats.lost);
       fflush(NULL);
 
       HASH_DELETE(hh, conns->h, conn_io);
@@ -607,6 +695,8 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
       ev_timer_stop(loop, &conn_io->sender);
       ev_timer_stop(loop, &conn_io->pacer);
       quiche_conn_free(conn_io->conn);
+      dtp_layers_free(conn_io->dtp_ctx);
+      free(conn_io->cfgs);
       free(conn_io);
     }
   }
@@ -614,19 +704,18 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
 
 static void timeout_cb(EV_P_ ev_timer *w, int revents) {
   struct conn_io *conn_io = w->data;
-  dtp_conn_on_timeout(conn_io->dtp_ctx->tc_ctx);
+  quiche_conn_on_timeout(conn_io->conn);
 
   log_debug("timeout");  
 
   flush_egress(loop, conn_io);
 
-  if (dtp_conn_is_closed(conn_io->dtp_ctx->tc_ctx)) {
-    dtp_stats stats;
+  if (quiche_conn_is_closed(conn_io->conn)) {
+    quiche_stats stats;
 
-    dtp_conn_stats(conn_io->dtp_ctx,&stats);
-    dump_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=%" PRIu64
-              "ns cwnd=%zu\n",
-              stats.quiche_stat.recv, stats.quiche_stat.sent, stats.quiche_stat.lost, stats.quiche_stat.rtt, stats.quiche_stat.cwnd);
+    quiche_conn_stats(conn_io->conn,&stats);
+    dump_info("connection closed, recv=%zu sent=%zu lost=%zu rtt=??ns cwnd=??\n",
+              stats.recv, stats.sent, stats.lost);
     fflush(NULL); 
 
     HASH_DELETE(hh, conns->h, conn_io);
@@ -634,10 +723,10 @@ static void timeout_cb(EV_P_ ev_timer *w, int revents) {
     ev_timer_stop(loop, &conn_io->timer);
     ev_timer_stop(loop, &conn_io->sender);
     ev_timer_stop(loop, &conn_io->pacer);
-    quiche_conn_free(conn_io->dtp_ctx->quic_conn);
+    quiche_conn_free(conn_io->conn);
+    dtp_layers_free(conn_io->dtp_ctx);
     free(conn_io->cfgs);
     free(conn_io);
-
     return;
   }
 }
@@ -646,8 +735,8 @@ int main(int argc, char *argv[]) {
   args.out_file = stdout;
   args.log_file = stdout;
   argp_parse(&argp, argc, argv, 0, 0, &args);
-  log_info("SERVER_IP:PORT %s:%s DTP_TRACE_FILE %s", args.server_ip,
-           args.server_port, args.dtp_trace_file);
+  log_info("SERVER_IP:PORT %s:%s DTP_TRACE_FILE %s", args.local_ip,
+           args.local_port, args.dtp_trace_file);
 
    struct addrinfo hints = {.ai_family = AF_UNSPEC,
                                  .ai_socktype = SOCK_DGRAM,
@@ -655,14 +744,14 @@ int main(int argc, char *argv[]) {
 
   dtp_enable_debug_logging(debug_log, NULL);
 
-  struct addrinfo *server;
-  int err = getaddrinfo(args.server_ip, args.server_port, &hints, &server);
+  struct addrinfo *local;
+  int err = getaddrinfo(args.local_ip, args.local_port, &hints, &local);
   if (err != 0) {
     log_error("getaddrinfo: %s", gai_strerror(err));
     return -1;
   }
 
-  int sock =socket(server->ai_family, server->ai_socktype, server->ai_protocol);
+  int sock =socket(local->ai_family, local->ai_socktype, local->ai_protocol);
   if (sock < 0) {
     log_error("create socket");
     return -1;
@@ -673,18 +762,41 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  if (bind(sock, server->ai_addr, server->ai_addrlen) < 0) {
+  if (bind(sock, local->ai_addr, local->ai_addrlen) < 0) {
     log_error("bind %s", strerror(errno));
     return -1;
   }
 
-  //config = quiche_config_new(QUICHE_PROTOCOL_VERSION);
- 
- 
-    
+  config = quiche_config_new(QUICHE_PROTOCOL_VERSION);
+  if (config == NULL) {
+    // fprintf(stderr, "failed to create config\n");
+    return -1;
+  }
+  quiche_config_load_cert_chain_from_pem_file(config, "./cert.crt");
+  quiche_config_load_priv_key_from_pem_file(config, "./cert.key");
+  quiche_config_set_application_protos(
+    config,
+    (uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
+  const int dgramRecvQueueLen=20;
+  const int dgramSendQueueLen=20;
+  quiche_config_set_max_idle_timeout(config, 10000);
+  quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+  quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+  quiche_config_set_initial_max_data(config, 1000000000);
+  quiche_config_set_initial_max_stream_data_uni(config, 1000000000);
+  quiche_config_set_initial_max_streams_uni(config, 1000000000);
+  quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
+  quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
+  quiche_config_set_initial_max_streams_bidi(config, 1000000000);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
+  // enable dgram
+  quiche_config_enable_dgram(config, true, dgramRecvQueueLen, dgramSendQueueLen); 
+
   struct connections c;
   c.sock = sock;
-  c.ai_family = server->ai_family;
+  c.ai_family = local->ai_family;
+  c.local_addr = local->ai_addr;
+  c.local_addr_len = local->ai_addrlen;
   c.h = NULL;
 
   conns = &c;
@@ -701,9 +813,23 @@ int main(int argc, char *argv[]) {
 
   ev_loop(loop, 0);
 
-  freeaddrinfo(server);
+  freeaddrinfo(local);
 
-  //quiche_config_free(config);
+  quiche_config_free(config);
 
+  struct conn_io *tmp, *conn_io = NULL;
+  HASH_ITER(hh, conns->h, conn_io, tmp) {
+    if (true) {
+      HASH_DELETE(hh, conns->h, conn_io);
+
+      ev_timer_stop(loop, &conn_io->timer);
+      ev_timer_stop(loop, &conn_io->sender);
+      ev_timer_stop(loop, &conn_io->pacer);
+      quiche_conn_free(conn_io->conn);
+      dtp_layers_free(conn_io->dtp_ctx);
+      free(conn_io->cfgs);
+      free(conn_io);
+    }
+  }
   return 0;
 }

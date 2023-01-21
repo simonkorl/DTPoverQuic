@@ -56,6 +56,8 @@ typedef struct dtp_schedule_layer {
 // Initialize the scheduler layer.
 int dtp_scheduler_init(dtp_layers_ctx* dtp_ctx, dtp_trans_mode transport_mode);
 
+int dtp_scheduler_free(dtp_layers_ctx* dtp_ctx);
+
 //Test no scheduling
 void dtplq_disable_sche(dtp_layers_ctx* dtp_ctx);
 

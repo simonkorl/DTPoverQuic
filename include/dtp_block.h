@@ -25,6 +25,17 @@ typedef struct {
     uint8_t tmode;  
 } block;
 
+typedef struct quiche_block {
+    uint64_t block_id;
+    /// The DTP block size.
+    uint64_t size;
+    /// The DTP block priority.
+    uint64_t priority;
+    /// The DTP block deadline.
+    uint64_t deadline;
+    uint64_t start_at;
+} quiche_block;
+
 #if defined(__cplusplus)
 }
 #endif

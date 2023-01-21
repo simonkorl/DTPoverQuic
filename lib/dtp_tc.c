@@ -117,6 +117,24 @@ int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
     }
     return ret;
 }
+int dtp_tcontroler_free(dtp_layers_ctx* dtp_ctx) {
+    //dtp_tc_ctx
+    int ret = 0;
+
+    if (dtp_ctx == NULL || dtp_ctx->tc_ctx == NULL) {
+        ret = -1;
+    } else {
+        dtp_tc_ctx* tc_ctx = dtp_ctx->tc_ctx;
+
+        if(tc_ctx->offset_arrived) {
+            free(tc_ctx->offset_arrived);
+        }
+
+        free(tc_ctx);
+        ret = 0;
+    }
+    return ret;
+}
 static void mint_token(const uint8_t *dcid, size_t dcid_len,
                        struct sockaddr_storage *addr, socklen_t addr_len,
                        uint8_t *token, size_t *token_len) {

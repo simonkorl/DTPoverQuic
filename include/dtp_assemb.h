@@ -61,7 +61,9 @@ typedef struct dtp_assemble_layer_ctx {
 } dtp_assem_ctx;
 
 //initialize the layer
-dtp_assem_ctx* dtp_assembler_init(info_assemble_mode mode);
+int dtp_assembler_init(dtp_layers_ctx* dtp_ctx, info_assemble_mode mode);
+
+int dtp_assembler_free(dtp_layers_ctx* dtp_ctx);
 // assemble the block automatically
 // Automatically set priority and deadline.
 int dtp_assemble_block_auto(dtp_assem_ctx* assemlay_ctx, uint64_t avrddl, uint64_t avrRTT, uint64_t bandwidth, block* blk);

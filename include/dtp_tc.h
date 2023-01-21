@@ -60,6 +60,7 @@ typedef struct dtp_traffic_control_ctx {
 //Initialize the traffic control layer.
 int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx);
 
+int dtp_tcontroler_free(dtp_layers_ctx* dtp_ctx);
 
 static void mint_token(const uint8_t *dcid, size_t dcid_len,
                        struct sockaddr_storage *addr, socklen_t addr_len,
