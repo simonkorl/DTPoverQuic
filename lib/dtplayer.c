@@ -271,7 +271,7 @@ ssize_t dtpl_conn_buf_send(dtp_layers_ctx *dtp_ctx,uint8_t * buf,uint64_t size,u
     // assemble block and adds it into hash map
     dtp_assemble_block(dtp_ctx, dtp_ctx->schelay_ctx, dtp_ctx->assemlay_ctx,
                         size, priority, deadline, buf, is_fragment);    
-    return dtpl_tc_conn_send( dtp_ctx);
+    return dtpl_tc_conn_send(dtp_ctx);
 }
 
 /*

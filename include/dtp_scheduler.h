@@ -31,7 +31,7 @@ typedef struct block {
 typedef struct dtp_schedule_layer {
     uint64_t nxtID; // to send
  
-    block_tlinkPtr blockinque; //link.record the info of the time of the blocks. always points to the header node,cam be blak
+    // block_tlinkPtr blockinque; //link.record the info of the time of the blocks. always points to the header node,cam be blak
     // rbinfoptr bhistory;
     // struct sockaddr_storage peer_addr;
     dtp_trans_mode transport_mode;
@@ -56,17 +56,20 @@ typedef struct dtp_schedule_layer {
 // Initialize the scheduler layer.
 int dtp_scheduler_init(dtp_layers_ctx* dtp_ctx, dtp_trans_mode transport_mode);
 
+// TODO: consider blockinqueue
 int dtp_scheduler_free(dtp_layers_ctx* dtp_ctx);
 
 //Test no scheduling
 void dtplq_disable_sche(dtp_layers_ctx* dtp_ctx);
 
 //Calculate the real priority in scheduler
-int64_t dtpl_sche_cal_real_pri(dtp_sctx* sche_ctx, bmap* block_pool, 
+// TODO: implement this function
+int64_t dtpl_sche_cal_real_pri(dtp_sctx* sche_ctx, bmap_element* block_pool, 
                           double bandwidth, double avrRTT, uint64_t id);
 
 //Calculate all the priority of blocks and choose the id of the most uurgent  one.
-uint64_t dtp_schedule_block(dtp_sctx* sche_ctx, bmap* block_pool, double bandwidth, double avrRTT);//todo:考虑sche binfo queue使用hash
+// TODO: implement this function
+uint64_t dtp_schedule_block(dtp_sctx* sche_ctx, bmap_element* block_pool, double bandwidth, double avrRTT);//todo:考虑sche binfo queue使用hash
 
 #if defined(__cplusplus)
 }

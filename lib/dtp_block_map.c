@@ -1,36 +1,42 @@
 #include "dtp_block_map.h"
 
-bmap* bmap_find(bmap* head, uint64_t id) {
-    bmap *s;
+bmap_element* bmap_find(bmap_element* head, uint64_t id) {
+    bmap_element *s;
     // s = (bmap *)malloc(sizeof *s);
     HASH_FIND_INT(head,&id,s);
     return s;
 }
 
-int bmap_add(bmap * head,uint64_t id,block * blk){ 
-    bmap * news;
+int bmap_add(bmap_element ** head,uint64_t id,block * blk){ 
+    bmap_element * news;
     
-    HASH_FIND_INT(head, &id,news); 
+    HASH_FIND_INT(*head, &id, news); 
 
-    if (news==NULL){
-        news=(bmap *)malloc(sizeof *news);
+    if (news == NULL){
+        news=(bmap_element *)malloc(sizeof(bmap_element));
         news->id=id;
-        HASH_ADD_INT(head,id, news);
+        news->block = blk;
+        HASH_ADD_INT(*head, id, news);
         return 0;
     } else {
         return -1;
     }
 }
 
-int bmap_delete(bmap * blockhash, uint64_t id){
-    bmap * aim = bmap_find(blockhash,id);
+int bmap_delete(bmap_element ** blockhash, uint64_t id){
+    bmap_element *aim = bmap_find(*blockhash, id);
     if(aim == NULL){
         return -1;
     }
 
-    HASH_DEL(blockhash,aim);
+    HASH_DEL(*blockhash, aim);
     log_info("Delete block with id %lu",id);
-    free(aim->block.buf);
+    if(aim->block) {
+        if(aim->block->buf) {
+            free(aim->block->buf);
+        }
+        free(aim->block);
+    }
     free(aim);
     
     return 1;

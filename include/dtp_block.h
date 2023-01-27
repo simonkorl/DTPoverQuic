@@ -22,7 +22,11 @@ typedef struct {
     uint64_t deadline;
 //tmode =1 ,drop the blocks which exceeds the deadline.
 //tmode =0 ,transmit as possible as it can.
-    uint8_t tmode;  
+    uint8_t tmode;
+    // already sent information
+    size_t counter;
+    size_t offset;
+    size_t dgram_num;
 } block;
 
 typedef struct quiche_block {

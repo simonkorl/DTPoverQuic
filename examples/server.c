@@ -319,7 +319,8 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
   conn_io->conn = conn;
   // * we move some dtp_ctx init outside the function
   conn_io->dtp_ctx->quic_conn = conn;
-  log_debug("ctx: %p", conn_io->dtp_ctx->tc_ctx);
+  log_info("quic_conn: %p", conn_io->dtp_ctx->quic_conn);
+  log_info("ctx: %p", conn_io->dtp_ctx);
   conn_io->dtp_ctx->tc_ctx->quic_conn = conn;
   conn_io->dtp_ctx->tc_ctx->quic_config = config;
   log_debug("before copying");
@@ -455,13 +456,39 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
         }
       } else {
         // sent = quiche_conn_block_send(conn_io->conn, stream_id, buf,block.size, true, &block);
-        static uint8_t outs[]="buf,block.size";
-        memset(buf,(conn_io->send_round%10)-'0',MAX_BLOCK_SIZE);
-        sent = dtpl_conn_buf_send(conn_io->dtp_ctx, buf, 
-                                    conn_io->cfgs[conn_io->send_round].size, 
-                                    conn_io->cfgs[conn_io->send_round].priority, 
-                                    conn_io->cfgs[conn_io->send_round].deadline,
-                                    true);
+        int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
+        assert(hdr_len > 0);
+        log_info("%ld, %ld, %ld, %ld", 
+                  block.size,
+                  block.priority,
+                  block.deadline,
+                  block.start_at
+                  );
+        // create block
+        int r = dtp_assemble_block(
+          conn_io->dtp_ctx, 
+          conn_io->dtp_ctx->schelay_ctx, 
+          conn_io->dtp_ctx->assemlay_ctx,
+          block.size, 
+          block.priority,
+          block.deadline, 
+          buf, 
+          true);
+
+        if(r != 1) {
+          log_error("failed to create block, r: %d", r);
+          break;
+        }
+        // sent = dtpl_conn_buf_send(conn_io->dtp_ctx, buf, 
+        //                             block.size, 
+        //                             block.priority, 
+        //                             block.deadline,
+        //                             true);
+        // if(sent != block.size) {
+        //   log_debug("failed to send block %d : sent %zd, size %zd",
+        //           conn_io->send_round, sent, block.size);
+        //   break;
+        // }
       }
       if(send_time_gap < 0.0001) {
         send_offset = 0;
@@ -478,7 +505,10 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
       ev_timer_stop(loop, &conn_io->sender);
     }
   }
-
+  if(!QUIC_ENABLE) {
+    size_t size = dtpl_tc_conn_send(conn_io->dtp_ctx);
+    log_debug("dtpl_tc_conn_send, send: %d", size);
+  }
   flush_egress(loop, conn_io);
 }
 
@@ -644,17 +674,17 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
       quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);
 
       if(!QUIC_ENABLE) {
-        static uint8_t block_buf[MAX_BLOCK_SIZE];
-        dtp_tc_conn_block_recv(conn_io->dtp_ctx, block_buf);
+        // static uint8_t block_buf[MAX_BLOCK_SIZE];
+        // dtp_tc_conn_block_recv(conn_io->dtp_ctx, block_buf);
 
 
-        for(uint64_t offset=0; offset<(conn_io->dtp_ctx->tc_ctx->off_array_num); offset++) {
-          uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
-          log_debug("Dgram offset = %lu",offstart);
-          for(int i=0;i<MAX_DATAGRAM_SIZE;i++) {
-            printf("%c",block_buf[offstart+i]);
-          }
-        }
+        // for(uint64_t offset=0; offset<(conn_io->dtp_ctx->tc_ctx->off_array_num); offset++) {
+        //   uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
+        //   log_debug("Dgram offset = %lu",offstart);
+        //   for(int i=0;i<MAX_DATAGRAM_SIZE;i++) {
+        //     printf("%c",block_buf[offstart+i]);
+        //   }
+        // }
 
         // TODO: add control flow send
         // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
@@ -777,8 +807,8 @@ int main(int argc, char *argv[]) {
   quiche_config_set_application_protos(
     config,
     (uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
-  const int dgramRecvQueueLen=20;
-  const int dgramSendQueueLen=20;
+  const int dgramRecvQueueLen=200;
+  const int dgramSendQueueLen=200;
   quiche_config_set_max_idle_timeout(config, 10000);
   quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
   quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);

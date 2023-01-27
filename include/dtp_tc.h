@@ -46,7 +46,7 @@ typedef struct dtp_traffic_control_ctx {
     //peer
     uint64_t peer_RTT;
 
-    bmap * recvQueue;
+    bmap_element * recvQueue;
  
     struct sockaddr_storage peer_addr;
     

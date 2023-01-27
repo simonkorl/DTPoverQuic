@@ -35,6 +35,8 @@
 #include "dtp_tc.h"
 #include "log_helper.h"
 
+#define min(a, b) (a < b ? a : b)
+
 //usage:
 /*
     send blocks 
@@ -88,7 +90,8 @@ int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
       
         dtp_tc_ctx* tc_ctx = ( dtp_tc_ctx*)malloc(sizeof(dtp_tc_ctx));
         if (tc_ctx == NULL) {
-            ret = -1; }
+            ret = -1; 
+        }
         else {
            
   
@@ -355,99 +358,129 @@ uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx){
 
 //send some block
 ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
+    log_warn("inside dtpl_tc_conn_block_send");
     if (block==NULL)
         return DTP_ERR_NULL_PTR;
-    uint8_t * buf_out=block->buf;
+    uint8_t *buf_out=block->buf;
     uint64_t id=block->id;
     uint64_t size=block->size;
+    log_info("send id: %d, size: %d, counter: %d, offset: %d, dgram_num: %d, ", block->id, block->size, block->counter, block->offset, block->dgram_num);
 
     static uint8_t out[MAX_DGRAM_SIZE];
-    memset(out,0,MAX_DGRAM_SIZE);
-    uint64_t bandwidth=0;
-    ssize_t sent=0;
-    offsetsize_t offset=0;//off set of the block
+    memset(out, 0, MAX_DGRAM_SIZE);
+    double bandwidth = 0;
+    ssize_t sent = 0;
+    offsetsize_t offset = block->offset;//off set of the block
     uint64_t priority;
     uint64_t deadline;
     uint64_t sent_time;
-    size_t dgram_hdrlen=sizeof(id)+sizeof(offset)+sizeof(sent_time);
-    size_t dgram_payloadlen=MAX_DGRAM_SIZE-dgram_hdrlen;
+    size_t send_size = 0;
 
-    size_t dgram_num=size/dgram_payloadlen;
+    size_t total_data_sent = 0;
+
+    assert(dtp_ctx);
+    assert(dtp_ctx->quic_conn);
+    size_t dgram_max_writable_len = quiche_conn_dgram_max_writable_len(dtp_ctx->quic_conn);
+    log_info("max writable len: %d", dgram_max_writable_len);
+    size_t dgram_hdrlen=sizeof(id)+sizeof(offset)+sizeof(sent_time);
+    size_t dgram_payloadlen = dgram_max_writable_len-dgram_hdrlen;
+
+    size_t dgram_num=size / dgram_payloadlen;
+    log_warn("dgram_num: %d, size: %d, dgram_payloadlen: %d", dgram_num, size, dgram_payloadlen);
     dgram_num=((size%dgram_payloadlen==0)?(dgram_num):(dgram_num+1))+1;
+    block->dgram_num = dgram_num;
     //divided into grams and send.
     //todo:dgram_size variables in ctx
-    size_t dg_counter=0;
-    
+    size_t dg_counter = block->counter;
+    log_warn("dgram_num: %d", dgram_num);
     while(dg_counter<dgram_num){
-            void * curptr=(void *)out;
-            memcpy(curptr,&id,sizeof(id));//set id in
-            curptr+=sizeof(id);
-            memcpy(curptr,&offset,sizeof(offset));//offset in block payload
-            curptr+=sizeof(offset);
-            sent_time= getCurrentUsec();
-            memcpy(curptr,&sent_time,sizeof(sent_time));
-            curptr+=sizeof(sent_time);
+        uint8_t* curptr = out;
+        memcpy(curptr,&id,sizeof(id));//set id in
+        curptr+=sizeof(id);
+        memcpy(curptr,&offset,sizeof(offset));//offset in block payload
+        curptr+=sizeof(offset);
+        sent_time= getCurrentUsec();
+        memcpy(curptr,&sent_time,sizeof(sent_time));
+        curptr+=sizeof(sent_time);
+        fprintf(stderr, "id: %x, offset: %x, sent_time: %x\n", id, offset, sent_time);
 
         if(dg_counter==0){
             //metadgram
-            int32_t zerooff=-2;//this is the metadata
-            memcpy(curptr-sizeof(offset),&zerooff,sizeof(zerooff));
+            offsetsize_t zerooff=-2; //this is the metadata
+            // replace offset
+            memcpy(curptr-sizeof(sent_time)-sizeof(offset),&zerooff,sizeof(zerooff));
             memcpy(curptr,&size,sizeof(size));
             curptr+=sizeof(size);
             memcpy(curptr,&priority,sizeof(priority));
             curptr+=sizeof(priority);
             memcpy(curptr,&deadline,sizeof(deadline));
-          //todo:reliable tramsmission flag?
+            curptr+=sizeof(deadline);
+            //todo:reliable tramsmission flag?
+            fprintf(stderr, "id: %x, offset: %d, sent_time: %x\n", id, -1, sent_time);
         }
         else{
-            void * buf_out_ptr=((void *)buf_out)+offset;
-            memcpy((void*)curptr,buf_out_ptr,dgram_payloadlen);
-            //curptr+=dgram_payloadlen;
-            
+            // TODO: fix the data size
+            uint8_t* buf_out_ptr = ((uint8_t*)buf_out)+offset;
+            send_size = min(size - offset, dgram_payloadlen);
+            memcpy(curptr,buf_out_ptr,send_size);
+            curptr += send_size;
         }
-
         //!todo:因队列发送失败，是否不更新，重发 ？
-        if (quiche_conn_dgram_max_writable_len(dtp_ctx->quic_conn)>=sizeof(out)){
-            sent= quiche_conn_dgram_send(dtp_ctx->quic_conn,out,sizeof(out));
-            printf("Log:sents\n %ld",sent);
-            dg_counter++;
-            offset+=dgram_payloadlen;
-
-            bandwidth+=getCurrentUsec()-sent_time;
+        sent = quiche_conn_dgram_send(dtp_ctx->quic_conn,out,curptr - out);
+        if(sent != curptr - out) {
+            log_error("sent: %d, curptr - out: %d", sent, curptr - out);
+            if(sent == -1) {
+                block->counter = dg_counter;
+                block->offset = offset;
+                return offset;
+            } else {
+                block->counter = dg_counter;
+                block->offset = offset;
+                return -2;
+            }
         }
+        log_warn("sent %d bytes", sent);
+        if(dg_counter > 0) {
+            offset += send_size;
+        }
+        dg_counter++;
+        bandwidth += getCurrentUsec()-sent_time;
     }
+    log_info("finish sending block %d: counter %d/%d, offset/size %d/%d ", block->id, dg_counter, block->dgram_num, offset, block->size);
  
-    dtp_ctx->bandwidth= (dgram_num*MAX_DATAGRAM_SIZE)/(bandwidth/1000);//byte/ms
+    dtp_ctx->bandwidth = (dgram_num * MAX_DATAGRAM_SIZE) / (bandwidth / 1000);//byte/ms
     //delete block from hash map and list node
 
-    bmap_delete(dtp_ctx->block_pool,id);
-    block_tlinkPtr linkIter=dtp_ctx->schelay_ctx->blockinque;
-    if(linkIter!=NULL){
-    while(linkIter->data.id!=id){
-        linkIter=linkIter->next;
-    }
-    //not point to head
+    bmap_delete(&dtp_ctx->block_pool,id);
+
+    // TODO: implement blockinque related function
+    // block_tlinkPtr linkIter=dtp_ctx->schelay_ctx->blockinque;
+    // if(linkIter!=NULL){
+        // while(linkIter->data.id!=id){
+        //     linkIter=linkIter->next;
+        // }
+    // //not point to head
     
-    block_tlinkPtr last=linkIter->last;
-    block_tlinkPtr next=linkIter->next;
+        // block_tlinkPtr last=linkIter->last;
+        // block_tlinkPtr next=linkIter->next;
 
-    last->next=next;
-    next->last=last;
+        // last->next=next;
+        // next->last=last;
 
-    free(linkIter);
+        // free(linkIter);
 
-    if(linkIter==dtp_ctx->schelay_ctx->blockinque) {
-        dtp_ctx->schelay_ctx->blockinque=NULL;
-    }
-  }
+        // if(linkIter==dtp_ctx->schelay_ctx->blockinque) {
+        //     dtp_ctx->schelay_ctx->blockinque=NULL;
+        // }
+    // }
   
- // dtp_ctx->schelay_ctx->blockinque
+    // dtp_ctx->schelay_ctx->blockinque
 
-    return sent;
+    return offset;
 }
 
 //extract block bufdata (may be broken when using datagram) from dgram_recv_queue 
-int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
+int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
   
     if(block_buf == NULL){
         return -1;
@@ -460,7 +493,7 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
     static uint8_t recv_buf[MAX_DGRAM_SIZE];
     
 
-   // static uint8_t block_buf[BLOCK_SIZE];
+    // static uint8_t block_buf[BLOCK_SIZE];
 
     memset(recv_buf,0,MAX_DGRAM_SIZE);
     memset(block_buf,0,MAX_BLOCK_SIZE);
@@ -469,7 +502,7 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
     uint64_t deadline=0;
     uint64_t size=0;
 
-     recv_len=1;
+    recv_len=1;
     uint32_t off_ind=0;
     memset(tc_ctx->offset_arrived,0,tc_ctx->off_array_num);
  
@@ -483,11 +516,11 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
 
     for( ;recv_len!=DTP_ERR_DONE;){
         //todo :consider multiple ID situation/ using hash
-       recv_len=quiche_conn_dgram_recv(tc_ctx->quic_conn, recv_buf,MAX_DATAGRAM_SIZE);
-       total_bytes += recv_len;
+        recv_len=quiche_conn_dgram_recv(tc_ctx->quic_conn, recv_buf,MAX_DATAGRAM_SIZE);
+        total_bytes += recv_len;
        
 
-       if(recv_len!=DTP_ERR_DONE){
+        if(recv_len!=DTP_ERR_DONE){
             void * curptr=(void *)recv_buf+tc_ctx->dgram_hdrlen;
             parse_ddgram_hdr(recv_buf,&id,&offset,&sent_time);
             //todo:collected and push to queue with correspond ID,to indicate
@@ -513,8 +546,8 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
 
      
     }
-      uint64_t RTT=RTT_gap/(off_ind+1);
-       tc_ctx->peer_RTT=RTT; //each dgram.todo:more stable standard recent RTTs?
+    uint64_t RTT=RTT_gap/(off_ind+1);
+    tc_ctx->peer_RTT=RTT; //each dgram.todo:more stable standard recent RTTs?
 
     log_info("Recieve block,ID :%lu size : %lu priority :%lu dgram_num:%lu RTT:%lu\n",id,size,priority,off_ind+1);
     return block_buf;
@@ -525,11 +558,15 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf ){
 //select a block from the pool and send via datagram
 //TODO: rename
 ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
+  log_warn("enter dtpl_tc_conn_send");
   uint64_t id = dtp_schedule_block(dtp_ctx->schelay_ctx, dtp_ctx->block_pool, dtp_ctx->bandwidth, dtp_ctx->avrRTT);
-  block * aim_block= bmap_find(dtp_ctx->block_pool,id);
-  if( aim_block==NULL)
+  log_warn("schedule id: %lu", id);
+  bmap_element *aim_bmap_element = bmap_find(dtp_ctx->block_pool, id);
+  if(aim_bmap_element == NULL) {
+    log_error("no target element");
     return -1;
-  return dtpl_tc_conn_block_send(dtp_ctx, aim_block);
+  }
+  return dtpl_tc_conn_block_send(dtp_ctx, aim_bmap_element->block);
 }
 
 //bool quiche_conn_is_closed(quiche_conn *conn);

@@ -35,7 +35,7 @@ struct dtp_global_ctx {
     uint64_t avrRTT;    //todo:move to tc_ctx?
     uint64_t bandwidth;  //? 单位?
     uint64_t avrddl;    //dgram level.todo:block level
-    bmap* block_pool; //block hash
+    bmap_element* block_pool; //block hash
  
  
     unsigned int do_congestion_control : 1;

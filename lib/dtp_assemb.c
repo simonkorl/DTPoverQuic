@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <assert.h>
 
 #include "dtp_assemb.h"
 
@@ -50,7 +51,7 @@ int dtp_assemble_block_auto(dtp_assem_ctx* assemlay_ctx,
     
     int cout=1;
     if(!blk){
-         blk->deadline=max(avrddl,avrRTT+blk->size/bandwidth);
+        blk->deadline=max(avrddl,avrRTT+blk->size/bandwidth);
     }
     int i=0;
     if(!blk){
@@ -83,20 +84,21 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
     uint8_t* buf,         \
     int is_fragment     \
     ){
-
     if(dtp_ctx==NULL ||assemlay_ctx ==NULL ||buf==NULL||size<=0){
         log_debug("Failed to assemble block\n");
         return -1;
     }
     //create blocks
-    block news={0};
-    news.id=dtp_ctx->newid;
+    block *news = calloc(1, sizeof(block));
+    news->id = dtp_ctx->newid;
     dtp_ctx->newid++;
-    news.buf=buf;
-    news.size=size;
-    news.tmode=is_fragment>=1?1:0;
-    news.priority=priority;
-    news.deadline=deadline;
+    news->buf = calloc(1, size);
+    memcpy(news->buf, buf, size);
+    news->size=size;
+    news->tmode=is_fragment>=1?1:0;
+    news->priority=priority;
+    news->deadline=deadline;
+    log_info("create block: id: %d, size: %d, blk: %p", news->id, news->size, news);
 
     if(priority==0||deadline==0){
         int cout = dtp_assemble_block_auto(assemlay_ctx, 
@@ -104,23 +106,23 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
                                         dtp_ctx->avrRTT,
                                         dtp_ctx->bandwidth,
                                         &news);
-        if( cout==-1) {
+        if(cout==-1) {
             log_debug("Failed to auto ass.Default settings.\n");
         }
     }
 
-    bmap_add(dtp_ctx->block_pool,news.id,&news);
-    
-    //timestamps in que 
-    block_tlinkPtr bhead = schelay_ctx->blockinque;
-    bhead->data.id=news.id;
-    bhead->data.in=getCurrentUsec();
+    assert(bmap_add(&dtp_ctx->block_pool, news->id, news) == 0);
 
-    block_t_link * newinfo=(block_t_link*)malloc(sizeof(block_t_link));
-    newinfo->next=bhead;
-    newinfo->last=bhead->last;
-    bhead->last->next=newinfo;
-    bhead->last=newinfo;
+    // TODO: timestamps in que 
+    // block_tlinkPtr bhead = schelay_ctx->blockinque;
+    // bhead->data.id=news.id;
+    // bhead->data.in=getCurrentUsec();
+
+    // block_t_link * newinfo=(block_t_link*)malloc(sizeof(block_t_link));
+    // newinfo->next=bhead;
+    // newinfo->last=bhead->last;
+    // bhead->last->next=newinfo;
+    // bhead->last=newinfo;
 
     //history array
     assemlay_ctx->historyCurIndex++;
@@ -129,12 +131,11 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
         assemlay_ctx->hisCount++;
 
     r_binfo newInfo;
-    newInfo.deadline=news.deadline;
-    newInfo.size=news.size;
-    newInfo.priority=news.priority;
+    newInfo.deadline = news->deadline;
+    newInfo.size = news->size;
+    newInfo.priority = news->priority;
 
     (assemlay_ctx->historyArray) [ (assemlay_ctx->historyCurIndex) % (assemlay_ctx->historyLen)]=newInfo;
- 
 
     return 1;
 }

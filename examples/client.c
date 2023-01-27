@@ -303,16 +303,16 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
 
   if (quiche_conn_is_established(conn_io->conn)) {
     if(!QUIC_ENABLE) {
-      static uint8_t block_buf[MAX_BLOCK_SIZE];
-      dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
+      // static uint8_t block_buf[MAX_BLOCK_SIZE];
+      // dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
 
-      for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++) {
-        uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
-        log_debug("Dgram offset = %lu",offstart);
-        for(int i=0;i<MAX_DATAGRAM_SIZE;i++) {
-          printf("%c",block_buf[offstart+i]);
-        }
-      }
+      // for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++) {
+      //   uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
+      //   log_debug("Dgram offset = %lu",offstart);
+      //   for(int i=0;i<MAX_DATAGRAM_SIZE;i++) {
+      //     printf("%c",block_buf[offstart+i]);
+      //   }
+      // }
 
       // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
 

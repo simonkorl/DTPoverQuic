@@ -10,19 +10,19 @@ extern "C" {
 
 //todo multiple connection situation
 //{conn:bmap}
-typedef struct blockmap{
+typedef struct blockmap_element {
     uint64_t id;
-    block block;
+    block *block;
 
     UT_hash_handle hh;    
-} bmap;
+} bmap_element;
 
-bmap * bmap_find(bmap * head,uint64_t id);
+bmap_element * bmap_find(bmap_element * head,uint64_t id);
 
 // TODO: what if we add duplicate id but different block?
-int bmap_add(bmap * head, uint64_t id, block * blk);
+int bmap_add(bmap_element ** head, uint64_t id, block * blk);
 
-int bmap_delete(bmap * head, uint64_t id);
+int bmap_delete(bmap_element ** head, uint64_t id);
 
 #if defined(__cplusplus)
 }
