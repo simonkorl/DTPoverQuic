@@ -357,6 +357,11 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
 static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
   static uint8_t out[MAX_DATAGRAM_SIZE];
 
+  if(!QUIC_ENABLE) {
+    size_t size = dtpl_tc_conn_send(conn_io->dtp_ctx);
+    log_debug("dtpl_tc_conn_send, send: %d", size);
+  }
+
   quiche_send_info send_info;
 
   while (1) {
@@ -505,10 +510,7 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
       ev_timer_stop(loop, &conn_io->sender);
     }
   }
-  if(!QUIC_ENABLE) {
-    size_t size = dtpl_tc_conn_send(conn_io->dtp_ctx);
-    log_debug("dtpl_tc_conn_send, send: %d", size);
-  }
+  
   flush_egress(loop, conn_io);
 }
 

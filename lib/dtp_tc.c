@@ -558,15 +558,19 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
 //select a block from the pool and send via datagram
 //TODO: rename
 ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
-  log_warn("enter dtpl_tc_conn_send");
-  uint64_t id = dtp_schedule_block(dtp_ctx->schelay_ctx, dtp_ctx->block_pool, dtp_ctx->bandwidth, dtp_ctx->avrRTT);
-  log_warn("schedule id: %lu", id);
-  bmap_element *aim_bmap_element = bmap_find(dtp_ctx->block_pool, id);
-  if(aim_bmap_element == NULL) {
-    log_error("no target element");
-    return -1;
-  }
-  return dtpl_tc_conn_block_send(dtp_ctx, aim_bmap_element->block);
+    if(HASH_COUNT(dtp_ctx->block_pool) == 0) {
+        // no block to send
+        return -1; // DONE
+    }
+    log_warn("enter dtpl_tc_conn_send");
+    uint64_t id = dtp_schedule_block(dtp_ctx->schelay_ctx, dtp_ctx->block_pool, dtp_ctx->bandwidth, dtp_ctx->avrRTT);
+    log_warn("schedule id: %lu", id);
+    bmap_element *aim_bmap_element = bmap_find(dtp_ctx->block_pool, id);
+    if(aim_bmap_element == NULL) {
+        log_error("no target element");
+        return -1;
+    }
+    return dtpl_tc_conn_block_send(dtp_ctx, aim_bmap_element->block);
 }
 
 //bool quiche_conn_is_closed(quiche_conn *conn);
