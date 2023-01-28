@@ -1,7 +1,7 @@
 /*  DTP traffic_control layer.Blocks are sent via tc layer.And it gives back feedback to the peer sender.   */
  
 #ifndef DTP_TC_H
-#define  DTP_TC_H
+#define DTP_TC_H
 
 #if defined(__cplusplus)
 extern "C" {
@@ -12,7 +12,8 @@ extern "C" {
 // #include "dtp_assemb.h"
 // #include "dtp_internal.h"
 #include "dtp_structure.h"
-#define offsetsize_t int64_t
+#include "dtp_block_map.h"
+#include "dtp_hdr.h"
  
 ///
 /*
@@ -53,10 +54,10 @@ typedef struct dtp_traffic_control_ctx {
     int control_stream_id;
     
     dtp_trans_mode transport_mode;
+
+    bmap_element *recv_blocks;
 } dtp_tc_ctx;
  
-
-
 //Initialize the traffic control layer.
 int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx);
 
@@ -112,20 +113,6 @@ ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct s
  
 //bool quiche_conn_is_closed(quiche_conn *conn);
 bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx);
-
-// encode block metadata
-// return: size of hdr
-ssize_t encode_metadata_hdr(uint8_t *out, uint64_t size, uint64_t priority, uint64_t deadline);
-
-// decode block metadata
-// return: 1 for success
-int decode_metadata_hdr(uint8_t *out, uint64_t *size, uint64_t *priority, uint64_t *deadline);
-
-// encode the basic dgram hdr to the buffer
-ssize_t write_ddgram_hdr(uint8_t *out, uint64_t id, offsetsize_t offset, uint64_t sent_time);
- 
-//parse the buf to get information from the peer.
-int parse_ddgram_hdr(uint8_t * dgram,uint64_t * id,offsetsize_t * offset,uint64_t * sent_time);
 
 #if defined(__cplusplus)
 }

@@ -72,14 +72,9 @@ find_package(PkgConfig REQUIRED)
 #option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
 
 # dtplayer library
+aux_source_directory(lib LIB_SRC)
 add_library(dtplayer-core
-    lib/dtp_assemb.c
-    lib/dtp_block_map.c
-    lib/dtp_config.c
-    lib/dtp_internal.c
-    lib/dtp_scheduler.c
-    lib/dtp_tc.c
-    lib/dtplayer.c
+    ${LIB_SRC}
 )
 #?
 target_link_libraries(dtplayer-core 

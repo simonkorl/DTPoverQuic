@@ -15,5 +15,6 @@
 8. 程序中 scheduler 中的 blockinque 初始化的地方没有初始化，导致了之后的空指针，目前把所有相关处理代码已经注释。调度器使用朴素的 FIFO
 9. blockmap 使用 uthash 库的方式出现问题，会导致空指针的问题。
 10. news 的 buf 不能直接引用外部指针（后面甚至会直接释放这个空间），需要复制
+11. tc_ctx->dgram_len 与发送时的 dgram_len 不一致，会导致问题。
 
 https://blog.csdn.net/u012342808/article/details/119464705
