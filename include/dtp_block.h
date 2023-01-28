@@ -27,6 +27,8 @@ typedef struct {
     size_t counter;
     size_t offset;
     size_t dgram_num;
+    // recv information
+    size_t total_recv;
 } block;
 
 typedef struct quiche_block {
@@ -37,6 +39,7 @@ typedef struct quiche_block {
     uint64_t priority;
     /// The DTP block deadline.
     uint64_t deadline;
+    /// timestamp
     uint64_t start_at;
 } quiche_block;
 

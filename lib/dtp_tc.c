@@ -494,7 +494,7 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
     dtp_tc_ctx * tc_ctx=dtp_ctx->tc_ctx;
     
     uint64_t total_bytes=0;
-    size_t recv_len=0;
+    ssize_t recv_len=0;
     static uint8_t recv_buf[MAX_DGRAM_SIZE];
     
 
@@ -502,9 +502,7 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
 
     memset(recv_buf,0, MAX_DGRAM_SIZE);
 
-    uint64_t priority=0;
-    uint64_t deadline=0;
-    uint64_t size=0;
+    dgram_hdr dhdr = {0};
 
     recv_len=1;
     uint32_t off_ind=0;
@@ -513,21 +511,19 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
     // memset(tc_ctx->offset_arrived,0,tc_ctx->off_array_num);
  
     static uint64_t sent_time;
-    static uint64_t id=0;
-    uint64_t RTT_gap=0;
-    offsetsize_t offset=0;
+    static uint64_t id  = 0;
+    uint64_t RTT_gap    = 0;
+    offsetsize_t offset = 0;
 
-    tc_ctx->recv_dgram_num=0;
- 
+    tc_ctx->recv_dgram_num = 0;
 
-    for( ;recv_len!=DTP_ERR_DONE;){
+    for(;recv_len!=DTP_ERR_DONE; off_ind++){
         //todo :consider multiple ID situation/ using hash
-        recv_len=quiche_conn_dgram_recv(tc_ctx->quic_conn, recv_buf,MAX_DATAGRAM_SIZE);
+        recv_len = quiche_conn_dgram_recv(tc_ctx->quic_conn, recv_buf, MAX_DATAGRAM_SIZE);
         log_info("recv dgram， len: %d", recv_len);
         // TODO: total_bytes += recv_len;
 
-        if(recv_len != DTP_ERR_DONE){
-            dgram_hdr dhdr = {0};
+        if(recv_len > 0){
             uint8_t *curptr = recv_buf + decode_dgram_hdr(recv_buf, &dhdr);
             id = dhdr.id;
             offset = dhdr.offset;
@@ -542,39 +538,46 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
             //todo:collected and push to queue with correspond ID,to indicate
             //the ID and timestamps via control stream
             //when the queue is not empty,send.
-            RTT_gap=RTT_gap+getCurrentUsec()-sent_time;
+            RTT_gap = RTT_gap + getCurrentUsec() - sent_time;
             tc_ctx->recv_dgram_num++;
-            
+            // get block object
             bmap_element *e = bmap_find(tc_ctx->recv_blocks, id);
             if(e == NULL) {
                 //create a new block (empty)
                 block *blk = calloc(1, sizeof(block));
+                blk->size = dhdr.size;
+                blk->buf = calloc(dhdr.size, sizeof(uint8_t));
                 bmap_add(&tc_ctx->recv_blocks, id, blk);
                 e = bmap_find(tc_ctx->recv_blocks, id);
             }
-
-            if(offset==-2){ //metadata
+            if(offset == -2){ //metadata
                 metadata_hdr mhdr;
                 decode_metadata_hdr(curptr, &mhdr);
-                size = mhdr.size;
-                priority = mhdr.priority;
-                deadline = mhdr.deadline;
-                log_info("meta data: size: %d, priority: %d, deadline: %d", size, priority, deadline);   
+                log_info("meta data: size: %d, priority: %d, deadline: %d", 
+                    mhdr.size, 
+                    mhdr.priority, 
+                    mhdr.deadline
+                );   
                 e->block->id = id;
+                e->block->priority = mhdr.priority;
+                e->block->deadline = mhdr.deadline;
             }
             else{
-                // TODO: void * block_cur_ptr=(void*)block_buf+offset;
-                // TODO: memcpy(block_cur_ptr,curptr,MAX_DATAGRAM_SIZE-tc_ctx->dgram_hdrlen);
+                uint8_t *block_cur_ptr = e->block->buf + dhdr.offset;
+                memcpy(block_cur_ptr, curptr, dhdr.len);
+                e->block->total_recv += dhdr.len;
             }
             // TODO: (tc_ctx->offset_arrived)[off_ind]=offset;
-       }
-
-     
+        } else if(recv_len != DTP_ERR_DONE) {
+            log_error("recv error: %d", recv_len);
+            break;
+        } else {
+            break;
+        }
     }
-    uint64_t RTT=RTT_gap/(off_ind+1);
+    uint64_t RTT = RTT_gap/(off_ind+1);
     tc_ctx->peer_RTT=RTT; //each dgram.todo:more stable standard recent RTTs?
 
-    log_info("Recieve block,ID :%lu size : %lu priority :%lu dgram_num:%lu RTT:%lu\n",id,size,priority,off_ind+1, RTT);
     return 0;
 }
 
