@@ -12,7 +12,7 @@ extern "C" {
 // #include "dtp_assemb.h"
 // #include "dtp_internal.h"
 #include "dtp_structure.h"
-#define offsetsize_t int32_t
+#define offsetsize_t int64_t
  
 ///
 /*
@@ -91,7 +91,10 @@ uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx);
 ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block);
 
 //extract block bufdata (may be broken when using datagram) from dgram_recv_queue 
-int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf);
+int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf, size_t buf_size);
+
+// recv dgram and extract data
+ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx);
 
 //select a block from the pool and send via datagram
 ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx); //在使用者眼里，应该可以传入buf就解决掉assemble、发送的问题 //是否提供写buf的能力
@@ -109,8 +112,19 @@ ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct s
  
 //bool quiche_conn_is_closed(quiche_conn *conn);
 bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx);
+
+// encode block metadata
+// return: size of hdr
+ssize_t encode_metadata_hdr(uint8_t *out, uint64_t size, uint64_t priority, uint64_t deadline);
+
+// decode block metadata
+// return: 1 for success
+int decode_metadata_hdr(uint8_t *out, uint64_t *size, uint64_t *priority, uint64_t *deadline);
+
+// encode the basic dgram hdr to the buffer
+ssize_t write_ddgram_hdr(uint8_t *out, uint64_t id, offsetsize_t offset, uint64_t sent_time);
  
-//parse the buf to get imformations from the peer.
+//parse the buf to get information from the peer.
 int parse_ddgram_hdr(uint8_t * dgram,uint64_t * id,offsetsize_t * offset,uint64_t * sent_time);
 
 #if defined(__cplusplus)

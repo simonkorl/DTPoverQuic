@@ -303,8 +303,8 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
 
   if (quiche_conn_is_established(conn_io->conn)) {
     if(!QUIC_ENABLE) {
-      // static uint8_t block_buf[MAX_BLOCK_SIZE];
-      // dtp_tc_conn_block_recv(conn_io->dtp_ctx,block_buf);
+      static uint8_t block_buf[MAX_BLOCK_SIZE];
+      dtpl_tc_conn_recv(conn_io->dtp_ctx);
 
       // for(uint64_t offset=0;offset<(conn_io->dtp_ctx->tc_ctx->off_array_num);offset++) {
       //   uint64_t offstart=conn_io->dtp_ctx->tc_ctx->offset_arrived[offset];
@@ -317,11 +317,12 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
       // dtp_tc_control_flow_check(conn_io->dtp_ctx->tc_ctx);
 
       // dtp_tc_control_flow_send(conn_io->dtp_ctx, buf, sizeof(buf),true);
+      log_info("after block recv");
     }
 
-  
     uint64_t s = 0;
     quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);
+    log_info("after readable, readable: %p", readable);
 
     while (quiche_stream_iter_next(readable, &s)) {
       log_debug("stream %" PRIu64 " is readable", s);
@@ -373,6 +374,8 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
             conn_io->blocks[block_id].recv_size += recv_len;
           }
         }
+      } else {
+        // TODO
       }
       if (fin) {
         ended_at = get_current_usec();

@@ -371,8 +371,8 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
     double bandwidth = 0;
     ssize_t sent = 0;
     offsetsize_t offset = block->offset;//off set of the block
-    uint64_t priority;
-    uint64_t deadline;
+    uint64_t priority   = block->priority;
+    uint64_t deadline   = block->deadline;
     uint64_t sent_time;
     size_t send_size = 0;
 
@@ -395,31 +395,20 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
     log_warn("dgram_num: %d", dgram_num);
     while(dg_counter<dgram_num){
         uint8_t* curptr = out;
-        memcpy(curptr,&id,sizeof(id));//set id in
-        curptr+=sizeof(id);
-        memcpy(curptr,&offset,sizeof(offset));//offset in block payload
-        curptr+=sizeof(offset);
-        sent_time= getCurrentUsec();
-        memcpy(curptr,&sent_time,sizeof(sent_time));
-        curptr+=sizeof(sent_time);
-        fprintf(stderr, "id: %x, offset: %x, sent_time: %x\n", id, offset, sent_time);
+        curptr += write_ddgram_hdr(out, id, offset, sent_time);
+        log_info("id: %x, offset: %x, sent_time: %x\n", id, offset, sent_time);
 
         if(dg_counter==0){
             //metadgram
             offsetsize_t zerooff=-2; //this is the metadata
             // replace offset
             memcpy(curptr-sizeof(sent_time)-sizeof(offset),&zerooff,sizeof(zerooff));
-            memcpy(curptr,&size,sizeof(size));
-            curptr+=sizeof(size);
-            memcpy(curptr,&priority,sizeof(priority));
-            curptr+=sizeof(priority);
-            memcpy(curptr,&deadline,sizeof(deadline));
-            curptr+=sizeof(deadline);
+            curptr += encode_metadata_hdr(curptr, size, priority, deadline);
             //todo:reliable tramsmission flag?
-            fprintf(stderr, "id: %x, offset: %d, sent_time: %x\n", id, -1, sent_time);
+            log_info("id: %x, offset: %d, sent_time: %x\n", id, -2, sent_time);
+            log_info("size: %ld, priority: %ld, deadline: %ld\n", size, priority, deadline);
         }
         else{
-            // TODO: fix the data size
             uint8_t* buf_out_ptr = ((uint8_t*)buf_out)+offset;
             send_size = min(size - offset, dgram_payloadlen);
             memcpy(curptr,buf_out_ptr,send_size);
@@ -479,24 +468,18 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
     return offset;
 }
 
-//extract block bufdata (may be broken when using datagram) from dgram_recv_queue 
-int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
-  
-    if(block_buf == NULL){
-        return -1;
-    }
+ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
     dtp_tc_ctx * tc_ctx=dtp_ctx->tc_ctx;
     
     
     uint64_t total_bytes=0;
-    int32_t recv_len=0;
+    size_t recv_len=0;
     static uint8_t recv_buf[MAX_DGRAM_SIZE];
     
 
     // static uint8_t block_buf[BLOCK_SIZE];
 
-    memset(recv_buf,0,MAX_DGRAM_SIZE);
-    memset(block_buf,0,MAX_BLOCK_SIZE);
+    memset(recv_buf,0, MAX_DGRAM_SIZE);
 
     uint64_t priority=0;
     uint64_t deadline=0;
@@ -504,7 +487,9 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
 
     recv_len=1;
     uint32_t off_ind=0;
-    memset(tc_ctx->offset_arrived,0,tc_ctx->off_array_num);
+    // ! the follower expression causes segement fault
+    // TODO: fix it
+    // memset(tc_ctx->offset_arrived,0,tc_ctx->off_array_num);
  
     static uint64_t sent_time;
     static uint64_t id=0;
@@ -517,12 +502,85 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
     for( ;recv_len!=DTP_ERR_DONE;){
         //todo :consider multiple ID situation/ using hash
         recv_len=quiche_conn_dgram_recv(tc_ctx->quic_conn, recv_buf,MAX_DATAGRAM_SIZE);
-        total_bytes += recv_len;
-       
+        log_info("recv dgram， len: %d", recv_len);
+        // TODO: total_bytes += recv_len;
 
         if(recv_len!=DTP_ERR_DONE){
             void * curptr=(void *)recv_buf+tc_ctx->dgram_hdrlen;
             parse_ddgram_hdr(recv_buf,&id,&offset,&sent_time);
+            log_info("hdr{id: %d, offset: %d, sent_time: %ld}", id, offset, sent_time);
+            //todo:collected and push to queue with correspond ID,to indicate
+            //the ID and timestamps via control stream
+            //when the queue is not empty,send.
+            RTT_gap=RTT_gap+getCurrentUsec()-sent_time;
+            tc_ctx->recv_dgram_num++;
+            if(offset==-2){//metadata
+                decode_metadata_hdr(curptr, &size, &priority, &deadline);
+                log_info("meta data: size: %d, priority: %d, deadline: %d", size, priority, deadline);   
+            }
+            else{
+                // TODO: void * block_cur_ptr=(void*)block_buf+offset;
+                // TODO: memcpy(block_cur_ptr,curptr,MAX_DATAGRAM_SIZE-tc_ctx->dgram_hdrlen);
+            }
+            // TODO: (tc_ctx->offset_arrived)[off_ind]=offset;
+       }
+
+     
+    }
+    uint64_t RTT=RTT_gap/(off_ind+1);
+    tc_ctx->peer_RTT=RTT; //each dgram.todo:more stable standard recent RTTs?
+
+    log_info("Recieve block,ID :%lu size : %lu priority :%lu dgram_num:%lu RTT:%lu\n",id,size,priority,off_ind+1, RTT);
+    return 0;
+}
+
+//extract block bufdata (may be broken when using datagram) from dgram_recv_queue 
+int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf, size_t buf_size){
+  
+    if(block_buf == NULL){
+        return -1;
+    }
+    dtp_tc_ctx * tc_ctx=dtp_ctx->tc_ctx;
+    
+    
+    uint64_t total_bytes=0;
+    size_t recv_len=0;
+    static uint8_t recv_buf[MAX_DGRAM_SIZE];
+    
+
+    // static uint8_t block_buf[BLOCK_SIZE];
+
+    memset(recv_buf,0, MAX_DGRAM_SIZE);
+    memset(block_buf,0, buf_size);
+
+    uint64_t priority=0;
+    uint64_t deadline=0;
+    uint64_t size=0;
+
+    recv_len=1;
+    uint32_t off_ind=0;
+    // ! the follower expression causes segement fault
+    // TODO: fix it
+    // memset(tc_ctx->offset_arrived,0,tc_ctx->off_array_num);
+ 
+    static uint64_t sent_time;
+    static uint64_t id=0;
+    uint64_t RTT_gap=0;
+    offsetsize_t offset=0;
+
+    tc_ctx->recv_dgram_num=0;
+ 
+
+    for( ;recv_len!=DTP_ERR_DONE;){
+        //todo :consider multiple ID situation/ using hash
+        recv_len=quiche_conn_dgram_recv(tc_ctx->quic_conn, recv_buf,MAX_DATAGRAM_SIZE);
+        log_info("recv dgram， len: %d", recv_len);
+        // TODO: total_bytes += recv_len;
+
+        if(recv_len!=DTP_ERR_DONE){
+            void * curptr=(void *)recv_buf+tc_ctx->dgram_hdrlen;
+            parse_ddgram_hdr(recv_buf,&id,&offset,&sent_time);
+            log_info("hdr{id: %d, offset: %d, sent_time: %d}", id, offset, sent_time);
             //todo:collected and push to queue with correspond ID,to indicate
             //the ID and timestamps via control stream
             //when the queue is not empty,send.
@@ -534,14 +592,13 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
                 memcpy(&priority,curptr,sizeof(priority));
                 curptr+=sizeof(priority);
                 memcpy(&deadline,curptr,sizeof(deadline));
-                
-               //log_info("Recieve block :%lu ,%s:%s", args.server_ip, args.server_port);
+                log_info("meta data: size: %d, priority: %d, deadline: %d", size, priority, deadline);   
             }
             else{
                 void * block_cur_ptr=(void*)block_buf+offset;
-                memcpy(block_cur_ptr,curptr,MAX_DATAGRAM_SIZE-tc_ctx->dgram_hdrlen);
+                // TODO: memcpy(block_cur_ptr,curptr,MAX_DATAGRAM_SIZE-tc_ctx->dgram_hdrlen);
             }
-             (tc_ctx->offset_arrived)[off_ind]=offset;
+            // TODO: (tc_ctx->offset_arrived)[off_ind]=offset;
        }
 
      
@@ -549,8 +606,8 @@ int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf){
     uint64_t RTT=RTT_gap/(off_ind+1);
     tc_ctx->peer_RTT=RTT; //each dgram.todo:more stable standard recent RTTs?
 
-    log_info("Recieve block,ID :%lu size : %lu priority :%lu dgram_num:%lu RTT:%lu\n",id,size,priority,off_ind+1);
-    return block_buf;
+    log_info("Recieve block,ID :%lu size : %lu priority :%lu dgram_num:%lu RTT:%lu\n",id,size,priority,off_ind+1, RTT);
+    return 0;
 }
 
 //process the imcoming socket buf;
@@ -604,6 +661,44 @@ ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct s
     return quiche_conn_recv(tc_ctx->quic_conn, buf, read, &recv_info);
 }
 
+ssize_t encode_metadata_hdr(uint8_t *out, uint64_t size, uint64_t priority, uint64_t deadline) {
+    uint8_t* curptr = out;
+    memcpy(curptr,&size,sizeof(size));
+    curptr+=sizeof(size);
+    memcpy(curptr,&priority,sizeof(priority));
+    curptr+=sizeof(priority);
+    memcpy(curptr,&deadline,sizeof(deadline));
+    curptr+=sizeof(deadline);
+    return sizeof(size) + sizeof(priority) + sizeof(deadline);
+}
+
+int decode_metadata_hdr(uint8_t *out, uint64_t *size, uint64_t *priority, uint64_t *deadline) {
+    if(size == NULL||priority == NULL|| deadline == NULL) {
+        return -1;
+    }
+    uint8_t* curptr = out;
+    memcpy(size, curptr, sizeof(*size));
+    curptr+=sizeof(*size);
+    memcpy(priority, curptr, sizeof(*priority));
+    curptr+=sizeof(*priority);
+    memcpy(deadline, curptr, sizeof(*deadline));
+    curptr+=sizeof(*deadline);
+    return 0;
+}
+
+ssize_t write_ddgram_hdr(uint8_t *out, uint64_t id, offsetsize_t offset, uint64_t sent_time) {
+  uint8_t* curptr = out;
+  memcpy(curptr,&id,sizeof(id));//set id in
+  curptr+=sizeof(id);
+  memcpy(curptr,&offset,sizeof(offset));//offset in block payload
+  curptr+=sizeof(offset);
+  sent_time= getCurrentUsec();
+  memcpy(curptr,&sent_time,sizeof(sent_time));
+  curptr+=sizeof(sent_time);
+
+  return sizeof(id) + sizeof(offset) + sizeof(sent_time);
+}
+
 int parse_ddgram_hdr(uint8_t * dgram,uint64_t * id,offsetsize_t * offset,uint64_t * sent_time){
 
     if(id==NULL||offset==NULL||sent_time==NULL)
@@ -616,7 +711,7 @@ int parse_ddgram_hdr(uint8_t * dgram,uint64_t * id,offsetsize_t * offset,uint64_
     memcpy(offset,curptr,sizeof(*offset));
     curptr+=sizeof(*offset);
     memcpy(sent_time,curptr,sizeof(*sent_time));
-    curptr+=sizeof(*offset);
+    curptr+=sizeof(*sent_time);
     return 1;
 }
 /*

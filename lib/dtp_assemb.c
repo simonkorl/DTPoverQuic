@@ -99,6 +99,7 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
     news->priority=priority;
     news->deadline=deadline;
     log_info("create block: id: %d, size: %d, blk: %p", news->id, news->size, news);
+    log_info("priority: %lu, deadline: %lu", priority, deadline);
 
     if(priority==0||deadline==0){
         int cout = dtp_assemble_block_auto(assemlay_ctx, 
