@@ -159,6 +159,8 @@ struct conn_io {
   dtp_layers_ctx * dtp_ctx;
 
   UT_hash_handle hh;
+
+  quiche_block *blocks;
 };
 
 static quiche_config *config = NULL;
@@ -319,8 +321,6 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
   conn_io->conn = conn;
   // * we move some dtp_ctx init outside the function
   conn_io->dtp_ctx->quic_conn = conn;
-  log_info("quic_conn: %p", conn_io->dtp_ctx->quic_conn);
-  log_info("ctx: %p", conn_io->dtp_ctx);
   conn_io->dtp_ctx->tc_ctx->quic_conn = conn;
   conn_io->dtp_ctx->tc_ctx->quic_config = config;
   log_debug("before copying");
@@ -337,6 +337,15 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
   log_debug("after parse config");
   conn_io->cfgs = cfgs;
   conn_io->send_round = -1;
+
+  conn_io->blocks = calloc(conn_io->cfg_len, sizeof(quiche_block));
+  for(int i = 0; i < conn_io->cfg_len; ++i) {
+    conn_io->blocks[i].block_id = i;
+    conn_io->blocks[i].priority = conn_io->cfgs[i].priority;
+    conn_io->blocks[i].deadline = conn_io->cfgs[i].deadline;
+    conn_io->blocks[i].size     = conn_io->cfgs[i].size;
+    conn_io->blocks[i].start_at = 0;
+  }
 
   ev_init(&conn_io->timer, timeout_cb);
   conn_io->timer.data = conn_io;
@@ -423,13 +432,19 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
       float send_time_gap = conn_io->cfgs[conn_io->send_round].send_time_gap;
       static uint8_t buf[MAX_BLOCK_SIZE];
 
-      quiche_block block = {
-          .block_id = conn_io->send_round,
-          .size = conn_io->cfgs[conn_io->send_round].size,
-          .priority = conn_io->cfgs[conn_io->send_round].priority,
-          .deadline = conn_io->cfgs[conn_io->send_round].deadline,
-          .start_at = get_current_usec(),
-      };
+      // quiche_block block = {
+      //     .block_id = conn_io->send_round,
+      //     .size = conn_io->cfgs[conn_io->send_round].size,
+      //     .priority = conn_io->cfgs[conn_io->send_round].priority,
+      //     .deadline = conn_io->cfgs[conn_io->send_round].deadline,
+      //     .start_at = get_current_usec(),
+      // };
+
+      if(conn_io->blocks[conn_io->send_round].start_at == 0) {
+        conn_io->blocks[conn_io->send_round].start_at = get_current_usec();
+      }
+
+      quiche_block block = conn_io->blocks[conn_io->send_round];
 
       int stream_id = 4 * (conn_io->send_round + 1) + 1;
       log_debug("send stream %d", stream_id);
@@ -442,7 +457,7 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
         sent = quiche_conn_stream_send(conn_io->conn, stream_id, buf,
                                               hdr_len + block.size - send_offset, true);
                                         
-        log_info("%ld, %ld, %ld, %ld", 
+        log_debug("block info: size: %ld, priority: %ld, deadline: %ld, started_at: %ld", 
                   block.size,
                   block.priority,
                   block.deadline,
@@ -463,7 +478,7 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
         // sent = quiche_conn_block_send(conn_io->conn, stream_id, buf,block.size, true, &block);
         int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
         assert(hdr_len > 0);
-        log_info("%ld, %ld, %ld, %ld", 
+        log_debug("block info: size: %ld, priority: %ld, deadline: %ld, started_at: %ld", 
                   block.size,
                   block.priority,
                   block.deadline,
@@ -729,6 +744,7 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
       quiche_conn_free(conn_io->conn);
       dtp_layers_free(conn_io->dtp_ctx);
       free(conn_io->cfgs);
+      free(conn_io->blocks);
       free(conn_io);
     }
   }
@@ -758,6 +774,7 @@ static void timeout_cb(EV_P_ ev_timer *w, int revents) {
     quiche_conn_free(conn_io->conn);
     dtp_layers_free(conn_io->dtp_ctx);
     free(conn_io->cfgs);
+    free(conn_io->blocks);
     free(conn_io);
     return;
   }
@@ -809,8 +826,10 @@ int main(int argc, char *argv[]) {
   quiche_config_set_application_protos(
     config,
     (uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
-  const int dgramRecvQueueLen=200;
-  const int dgramSendQueueLen=200;
+
+  const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250;
+  const int dgramSendQueueLen=MAX_BLOCK_SIZE / 1250;
+
   quiche_config_set_max_idle_timeout(config, 10000);
   quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
   quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
@@ -860,6 +879,7 @@ int main(int argc, char *argv[]) {
       quiche_conn_free(conn_io->conn);
       dtp_layers_free(conn_io->dtp_ctx);
       free(conn_io->cfgs);
+      free(conn_io->blocks);
       free(conn_io);
     }
   }

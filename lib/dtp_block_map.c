@@ -30,7 +30,7 @@ int bmap_delete(bmap_element ** blockhash, uint64_t id){
     }
 
     HASH_DEL(*blockhash, aim);
-    log_info("Delete block with id %lu",id);
+    log_debug("Delete block with id %lu",id);
     if(aim->block) {
         if(aim->block->buf) {
             free(aim->block->buf);
@@ -39,5 +39,23 @@ int bmap_delete(bmap_element ** blockhash, uint64_t id){
     }
     free(aim);
     
+    return 1;
+}
+
+int bmap_lazy_delete(bmap_element **head, uint64_t id) {
+    bmap_element *aim = bmap_find(*head, id);
+    if(aim == NULL){
+        return -1;
+    }
+
+    if(aim->block) {
+        if(aim->block->buf) {
+            free(aim->block->buf);
+        }
+        free(aim->block);
+    }
+    aim->is_read = true;
+    aim->block = NULL;
+
     return 1;
 }

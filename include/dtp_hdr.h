@@ -17,12 +17,16 @@ typedef struct {
     uint64_t     len;       // the payload length
     uint64_t     sent_time; // timestamp on the sender side
     uint64_t     size;      // total length of the block
+    uint64_t     priority;
+    uint64_t     deadline;
+    uint64_t     t; // timestamp when the block is pushed in sender queue
 } dgram_hdr;
 
 typedef struct {
     uint64_t size;
     uint64_t priority;
     uint64_t deadline;
+    uint64_t t; // timestamp when the block is pushed in sender queue
 } metadata_hdr;
 
 static const int DGRAM_HDR_LEN = sizeof(dgram_hdr);

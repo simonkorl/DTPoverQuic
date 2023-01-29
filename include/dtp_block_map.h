@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "dtp_block.h"
 #include "log_helper.h"
 
@@ -12,6 +13,7 @@ extern "C" {
 //{conn:bmap}
 typedef struct blockmap_element {
     uint64_t id;
+    bool     is_read;
     block *block;
 
     UT_hash_handle hh;    
@@ -23,6 +25,10 @@ bmap_element * bmap_find(bmap_element * head,uint64_t id);
 int bmap_add(bmap_element ** head, uint64_t id, block * blk);
 
 int bmap_delete(bmap_element ** head, uint64_t id);
+
+// delete block pointer and mark deleted
+// remain the id
+int bmap_lazy_delete(bmap_element **head, uint64_t id);
 
 #if defined(__cplusplus)
 }

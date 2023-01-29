@@ -5,6 +5,7 @@
 #include <assert.h>
 
 #include "dtp_assemb.h"
+#include "dtp_internal.h"
 
 #define max(a,b) (a > b ? a : b)
  
@@ -90,6 +91,7 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
     }
     //create blocks
     block *news = calloc(1, sizeof(block));
+    news->t  = getCurrentUsec();
     news->id = dtp_ctx->newid;
     dtp_ctx->newid++;
     news->buf = calloc(1, size);
@@ -98,8 +100,8 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
     news->tmode=is_fragment>=1?1:0;
     news->priority=priority;
     news->deadline=deadline;
-    log_info("create block: id: %d, size: %d, blk: %p", news->id, news->size, news);
-    log_info("priority: %lu, deadline: %lu", priority, deadline);
+    log_debug("create block: id: %d, size: %d, blk: %p", news->id, news->size, news);
+    log_debug("priority: %lu, deadline: %lu", priority, deadline);
 
     if(priority==0||deadline==0){
         int cout = dtp_assemble_block_auto(assemlay_ctx, 

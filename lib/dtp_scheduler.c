@@ -116,9 +116,11 @@ uint64_t dtp_schedule_block(dtp_sctx* sche_ctx, bmap_element* block_pool, double
     //     }
     // }
     HASH_ITER(hh, blocks, iter, tmp) {
-        ret = iter->id;
-        log_info("select block: id: %d, size: %d, block: %p", iter->id, iter->block->size, iter->block);
-        break;
+        if(!iter->is_read) {
+            ret = iter->id;
+            log_debug("select block: id: %d, size: %d, block: %p", iter->id, iter->block->size, iter->block);
+            break;
+        }
     }
     return ret; // return the first element
 }  
