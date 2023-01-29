@@ -1,10 +1,11 @@
 #ifndef DTP_BLOCK_RECORD_H
 #define DTP_BLOCK_RECORD_H
 
+#include <stdint.h>
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
-#include <stdint.h>
 
 typedef struct block_record {
     

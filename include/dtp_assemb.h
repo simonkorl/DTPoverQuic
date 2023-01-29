@@ -3,9 +3,6 @@
 #ifndef DTP_ASSEMB_H
 #define DTP_ASSEMB_H
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
 
 // #include "dtplayer.h"
 // #include "dtp_structure.h"
@@ -13,6 +10,10 @@ extern "C" {
 #include "dtp_block_record.h"
 #include "dtp_structure.h"
 #include "dtp_scheduler.h"
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
 // the maximum size of block record(history array)
 #define BLOCK_RECORD_LEN 10 

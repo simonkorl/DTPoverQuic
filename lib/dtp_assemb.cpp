@@ -117,6 +117,11 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
 
     assert(bmap_add(&dtp_ctx->block_pool, news->id, news) == 0);
 
+    // scheduler layer
+    log_debug("block_queue: %d", schelay_ctx->block_queue->size());
+    schelay_ctx->block_queue->push_back(news->id);
+    log_debug("add this");
+    
     // TODO: timestamps in que 
     // block_tlinkPtr bhead = schelay_ctx->blockinque;
     // bhead->data.id=news.id;
@@ -128,7 +133,7 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
     // bhead->last->next=newinfo;
     // bhead->last=newinfo;
 
-    //history array
+    // history array
     assemlay_ctx->historyCurIndex++;
     assemlay_ctx->historyCurIndex=(assemlay_ctx->historyCurIndex)%(assemlay_ctx->historyLen);
     if(assemlay_ctx->hisCount<assemlay_ctx->historyLen)

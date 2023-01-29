@@ -18,12 +18,13 @@ int dtp_scheduler_init(dtp_layers_ctx* dtp_ctx, dtp_trans_mode transport_mode) {
         ret = -1;
     }
     else {
-        dtp_sctx* schelay_ctx = (dtp_sctx*)malloc(sizeof(dtp_sctx));
+        dtp_sctx* schelay_ctx = (dtp_sctx*)calloc(1, sizeof(dtp_sctx));
         if (schelay_ctx == NULL) {
             ret = -1;
         }
         else {
-            memset(schelay_ctx, 0, sizeof(dtp_sctx)); 
+            // memset(schelay_ctx, 0, sizeof(dtp_sctx)); 
+            schelay_ctx->nxtID = 0;
             schelay_ctx->transport_mode = transport_mode;
             // schelay_ctx->dtpctx=dtp_ctx;
             // block in que init
@@ -32,7 +33,10 @@ int dtp_scheduler_init(dtp_layers_ctx* dtp_ctx, dtp_trans_mode transport_mode) {
             // head->last = head;
              
             // schelay_ctx->blockinque=head;
-      
+            log_debug("Here");
+            schelay_ctx->block_queue = new std::deque<int>();
+            log_debug("Not here");
+
             dtp_ctx->schelay_ctx = schelay_ctx;
         }
     }
@@ -44,6 +48,7 @@ int dtp_scheduler_free(dtp_layers_ctx* dtp_ctx) {
     if(dtp_ctx == NULL || dtp_ctx->schelay_ctx == NULL) {
         ret = -1;
     } else {
+        delete(dtp_ctx->schelay_ctx->block_queue);
         free(dtp_ctx->schelay_ctx);
     }
     return ret;
@@ -115,13 +120,10 @@ uint64_t dtp_schedule_block(dtp_sctx* sche_ctx, bmap_element* block_pool, double
     //         nextID_priority=real;
     //     }
     // }
-    HASH_ITER(hh, blocks, iter, tmp) {
-        if(!iter->is_read) {
-            ret = iter->id;
-            log_debug("select block: id: %d, size: %d, block: %p", iter->id, iter->block->size, iter->block);
-            break;
-        }
-    }
+    // RR scheduler
+    ret = sche_ctx->block_queue->front();
+    sche_ctx->block_queue->pop_front();
+    sche_ctx->block_queue->push_back(ret);
     return ret; // return the first element
 }  
  

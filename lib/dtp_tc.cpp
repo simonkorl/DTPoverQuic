@@ -452,6 +452,17 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, Block * block){
 
     bmap_delete(&dtp_ctx->block_pool,id);
 
+    // remove block from scheduler
+    log_debug("block_queue size: %d", dtp_ctx->schelay_ctx->block_queue->size());
+    for(auto iter = dtp_ctx->schelay_ctx->block_queue->begin(); 
+             iter != dtp_ctx->schelay_ctx->block_queue->end(); 
+             ++iter) {
+        if(*iter == id) {
+            dtp_ctx->schelay_ctx->block_queue->erase(iter);
+            break;
+        }
+    }
+
     // TODO: implement blockinque related function
     // block_tlinkPtr linkIter=dtp_ctx->schelay_ctx->blockinque;
     // if(linkIter!=NULL){

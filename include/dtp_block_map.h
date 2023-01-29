@@ -1,14 +1,14 @@
 #ifndef DTP_BLOCK_MAP_H
 #define DTP_BLOCK_MAP_H
-#if defined(__cplusplus)
-extern "C" {
-#endif
 
 #include <stdint.h>
 #include <stdbool.h>
 #include "dtp_block.h"
 #include "log_helper.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
 //todo multiple connection situation
 //{conn:bmap}
 typedef struct blockmap_element {

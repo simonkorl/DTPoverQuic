@@ -3,9 +3,7 @@
 #ifndef DTP_SCHEDULER_H
 #define DTP_SCHEDULER_H
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
+#include <deque>
 
 #include <time.h>
 #include "dtp_block.h"
@@ -27,16 +25,18 @@ typedef struct block {
     uint32_t deadline;
 } block;
 */
-
+#if defined(__cplusplus)
+extern "C" {
+#endif
 typedef struct dtp_schedule_layer {
     uint64_t nxtID; // to send
- 
     // block_tlinkPtr blockinque; //link.record the info of the time of the blocks. always points to the header node,cam be blak
     // rbinfoptr bhistory;
     // struct sockaddr_storage peer_addr;
     dtp_trans_mode transport_mode;
+    // RR scheduler struct
+    std::deque<int> *block_queue;
 }  dtp_sctx;
-
 //record the timestamp the data comes in at the sender.
 
 //listnode

@@ -420,7 +420,10 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
             log_debug("recv_size: %ld, block_size: %ld", 
                       conn_io->blocks[block_id].recv_size,
                       conn_io->blocks[block_id].block_hdr.size);
-            assert(conn_io->blocks[block_id].recv_size == conn_io->blocks[block_id].block_hdr.size);
+            if(conn_io->blocks[block_id].recv_size != conn_io->blocks[block_id].block_hdr.size) {
+              log_error("recv_size: %lu, size: %lu", conn_io->blocks[block_id].recv_size, conn_io->blocks[block_id].block_hdr.size);
+              perror("recv_size != block.size");
+            }
             conn_io->blocks[block_id].bct = (ended_at - conn_io->blocks[block_id].block_hdr.start_at) / 1000;
             dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
                         block_id, 
@@ -437,15 +440,6 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
             }
           }
         }
-        // TODO: add stats
-        // uint64_t bct = quiche_conn_bct(conn_io->conn, s);
-        // quiche_block block_info;
-        // quiche_conn_block_info(conn_io->conn, s, &block_info);
-
-        // dump_file("%ld,%ld,%ld,%ld,%ld,%ld\n", s, bct, block_info.size,
-        //         block_info.priority, block_info.deadline,
-        //           ended_at - started_at);
-        // dump_file("%ld, ??, ??, ??, ??, %ld\n", s, ended_at - started_at);
       }
     }
     quiche_stream_iter_free(readable);
@@ -529,7 +523,7 @@ int main(int argc, char *argv[]) {
   
   quiche_config_set_application_protos(config,(uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
 
-  const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250;
+  const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250 * 2;
   const int dgramSendQueueLen=MAX_BLOCK_SIZE / 1250;
 
   quiche_config_set_max_idle_timeout(config, 10000);
