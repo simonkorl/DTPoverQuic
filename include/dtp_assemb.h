@@ -66,7 +66,7 @@ int dtp_assembler_init(dtp_layers_ctx* dtp_ctx, info_assemble_mode mode);
 int dtp_assembler_free(dtp_layers_ctx* dtp_ctx);
 // assemble the block automatically
 // Automatically set priority and deadline.
-int dtp_assemble_block_auto(dtp_assem_ctx* assemlay_ctx, uint64_t avrddl, uint64_t avrRTT, uint64_t bandwidth, block* blk);
+int dtp_assemble_block_auto(dtp_assem_ctx* assemlay_ctx, uint64_t avrddl, uint64_t avrRTT, uint64_t bandwidth, Block* blk);
 
 // assemble the block
 // Create a block based on the given data,and adds it to the block pool.

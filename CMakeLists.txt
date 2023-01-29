@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.13)
 project(DTPoverQuic
         VERSION 1.0.0.1
         DESCRIPTION "dtp layer over quiche"
-        LANGUAGES C)
+        )
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/lib) #! this statement must be after the project description
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)

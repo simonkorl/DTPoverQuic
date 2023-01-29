@@ -19,31 +19,31 @@
 
 
 
-int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *path){
+// int dtp_tc_config_load_cert_chain_from_pem_file(dtp_tc_ctx * tc_ctx,const char *path){
 
-    return quiche_config_load_cert_chain_from_pem_file(tc_ctx->quic_config, path);
-}
+//     return quiche_config_load_cert_chain_from_pem_file(tc_ctx->quic_config, path);
+// }
 
  
-int dtp_tc_config_enable_dgram(dtp_tc_ctx * tc_ctx,bool enabled,size_t recv_queue_len,size_t send_queue_len){
+// int dtp_tc_config_enable_dgram(dtp_tc_ctx * tc_ctx,bool enabled,size_t recv_queue_len,size_t send_queue_len){
     
-    quiche_config_enable_dgram(tc_ctx->quic_config, enabled, recv_queue_len,send_queue_len);
+//     quiche_config_enable_dgram(tc_ctx->quic_config, enabled, recv_queue_len,send_queue_len);
 
-    return 1;
-}
+//     return 1;
+// }
 
-bool dtp_version_is_supported(uint32_t version){
-    return  quiche_version_is_supported( version);
-}
+// bool dtp_version_is_supported(uint32_t version){
+//     return  quiche_version_is_supported( version);
+// }
 
-ssize_t dtp_negotiate_version(const uint8_t *scid, size_t scid_len,
-                                 const uint8_t *dcid, size_t dcid_len,
-                                 uint8_t *out, size_t out_len){
+// ssize_t dtp_negotiate_version(const uint8_t *scid, size_t scid_len,
+//                                  const uint8_t *dcid, size_t dcid_len,
+//                                  uint8_t *out, size_t out_len){
                                     
-    ssize_t quiche_negotiate_version( scid,  scid_len,
-                                  dcid,  dcid_len,
-                                 out,  out_len);
-}
+//     ssize_t quiche_negotiate_version(scid,  scid_len,
+//                                   dcid,  dcid_len,
+//                                  out,  out_len);
+// }
 
 // int dtp_accept(dtp_layers_ctx * dtp_ctx,const uint8_t *scid, size_t scid_len,
 //                            const uint8_t *odcid, size_t odcid_len,
@@ -178,7 +178,7 @@ dtp_layers_ctx* dtp_layers_initnew_cli(uint32_t version){
     }
     memset(dtp_ctx, 0, sizeof(dtp_layers_ctx));
     assert(dtp_assembler_init(dtp_ctx, DTP_BLOCK_INFO_AUTO) == 0);    
-    assert(dtp_scheduler_init(dtp_ctx, 0) == 0);      //only implement dgram sending.blockinque left NULL
+    assert(dtp_scheduler_init(dtp_ctx, (dtp_trans_mode) 0) == 0);      //only implement dgram sending.blockinque left NULL
     assert(dtp_tcontroler_init(dtp_ctx) == 0);
 
     //quiche conf
@@ -223,7 +223,7 @@ dtp_layers_ctx* dtp_layers_initnew_serv(uint32_t version){
     }
     memset(dtp_ctx, 0, sizeof(dtp_layers_ctx));
     assert(dtp_assembler_init(dtp_ctx, DTP_BLOCK_INFO_AUTO) == 0);
-    assert(dtp_scheduler_init(dtp_ctx, 0) == 0);      //only implement dgram sending.blockinque left NULL
+    assert(dtp_scheduler_init(dtp_ctx, (dtp_trans_mode) 0) == 0);      //only implement dgram sending.blockinque left NULL
     assert(dtp_tcontroler_init(dtp_ctx) == 0);
 
     //quiche conf

@@ -111,7 +111,7 @@ int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
             tc_ctx->peer_RTT=0;
         
             tc_ctx->control_stream_id=8;
-            tc_ctx->transport_mode=0;
+            tc_ctx->transport_mode = (dtp_trans_mode) 0;
 
             tc_ctx->recv_blocks = NULL;
            
@@ -365,7 +365,7 @@ uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx){
 
 
 //send some block
-ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block){
+ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, Block * block){
     log_trace("inside dtpl_tc_conn_block_send");
     if (block==NULL)
         return DTP_ERR_NULL_PTR;
@@ -532,13 +532,13 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
             bmap_element *e = bmap_find(tc_ctx->recv_blocks, id);
             if(e == NULL) {
                 //create a new block (empty)
-                block *blk = calloc(1, sizeof(block));
+                Block *blk = (Block *)calloc(1, sizeof(Block));
                 blk->id   = dhdr.id;
                 blk->priority = dhdr.priority;
                 blk->deadline = dhdr.deadline;
                 blk->t        = dhdr.t;
                 blk->size = dhdr.size;
-                blk->buf = calloc(dhdr.size, sizeof(uint8_t));
+                blk->buf = (uint8_t *)calloc(dhdr.size, sizeof(uint8_t));
                 bmap_add(&tc_ctx->recv_blocks, id, blk);
                 e = bmap_find(tc_ctx->recv_blocks, id);
             } else if(e->is_read) {
@@ -662,35 +662,35 @@ ssize_t dtpl_tc_conn_send(dtp_layers_ctx *dtp_ctx){
 }
 
 //bool quiche_conn_is_closed(quiche_conn *conn);
-bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx){
-  return quiche_conn_is_closed(tc_ctx->quic_conn);
-}
+// bool dtp_conn_is_closed(dtp_tc_ctx * tc_ctx){
+//   return quiche_conn_is_closed(tc_ctx->quic_conn);
+// }
 
 //Todo :check if the ctx as well as the parameters is not null.
-bool dtp_conn_is_established(dtp_tc_ctx *tc_ctx) {
-  assert((tc_ctx != NULL && tc_ctx->quic_conn != NULL));
-  return quiche_conn_is_established(tc_ctx->quic_conn);
-}
+// bool dtp_conn_is_established(dtp_tc_ctx *tc_ctx) {
+//   assert((tc_ctx != NULL && tc_ctx->quic_conn != NULL));
+//   return quiche_conn_is_established(tc_ctx->quic_conn);
+// }
  
 //select a block from the pool and send via datagram
-ssize_t dtp_conn_send(dtp_tc_ctx *tc_ctx, uint8_t *out,size_t out_len){
+// ssize_t dtp_conn_send(dtp_tc_ctx *tc_ctx, uint8_t *out,size_t out_len){
 
-  quiche_send_info send_info;
+//   quiche_send_info send_info;
 
-  return  quiche_conn_send(tc_ctx->quic_conn, *out, out_len,
-                          &send_info);
-}
+//   return quiche_conn_send(tc_ctx->quic_conn, out, out_len,
+//                           &send_info);
+// }
 
 //process the imcoming socket buf;
-ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len){
-    quiche_recv_info recv_info = {
-        (struct sockaddr *)peer_addr,
+// ssize_t dtp_conn_recv(dtp_tc_ctx * tc_ctx, uint8_t *buf, size_t buf_len,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len){
+//     quiche_recv_info recv_info = {
+//         (struct sockaddr *)peer_addr,
 
-        peer_addr_len,
-    };
+//         peer_addr_len,
+//     };
 
-    return quiche_conn_recv(tc_ctx->quic_conn, buf, read, &recv_info);
-}
+//     return quiche_conn_recv(tc_ctx->quic_conn, buf, read, &recv_info);
+// }
 
 /*
 used for sending buf 

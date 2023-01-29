@@ -1,4 +1,5 @@
 #include "dtp_hdr.h"
+#include <string.h>
 
 ssize_t encode_dgram_hdr(uint8_t *out, const dgram_hdr* hdr) {
     if(out == NULL || hdr == NULL) {

@@ -89,7 +89,7 @@ size_t dtp_tc_control_flow_recv(dtp_tc_ctx * tc_ctx, uint8_t *out, size_t buf_le
 uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx);
 
 //send some block
-ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, block * block);
+ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, Block * block);
 
 //extract block bufdata (may be broken when using datagram) from dgram_recv_queue 
 int dtp_tc_conn_block_recv(dtp_layers_ctx *dtp_ctx,uint8_t * block_buf, size_t buf_size);

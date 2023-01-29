@@ -7,7 +7,7 @@ bmap_element* bmap_find(bmap_element* head, uint64_t id) {
     return s;
 }
 
-int bmap_add(bmap_element ** head,uint64_t id,block * blk){ 
+int bmap_add(bmap_element ** head,uint64_t id,Block * blk){ 
     bmap_element * news;
     
     HASH_FIND_INT(*head, &id, news); 

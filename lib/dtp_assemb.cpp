@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
+#include <math.h>
 
 #include "dtp_assemb.h"
 #include "dtp_internal.h"
@@ -46,7 +47,7 @@ int dtp_assembler_free(dtp_layers_ctx* dtp_ctx) {
  
 //Automatically set priority and deadline.
 int dtp_assemble_block_auto(dtp_assem_ctx* assemlay_ctx, 
-    uint64_t avrddl, uint64_t avrRTT, uint64_t bandwidth, block * blk){
+    uint64_t avrddl, uint64_t avrRTT, uint64_t bandwidth, Block * blk){
     if(assemlay_ctx==NULL||assemlay_ctx->mode==2)
         return -1;
     
@@ -90,11 +91,11 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
         return -1;
     }
     //create blocks
-    block *news = calloc(1, sizeof(block));
+    Block *news = (Block *)calloc(1, sizeof(Block));
     news->t  = getCurrentUsec();
     news->id = dtp_ctx->newid;
     dtp_ctx->newid++;
-    news->buf = calloc(1, size);
+    news->buf = (uint8_t *)calloc(1, size);
     memcpy(news->buf, buf, size);
     news->size=size;
     news->tmode=is_fragment>=1?1:0;
@@ -108,7 +109,7 @@ int dtp_assemble_block(dtp_layers_ctx* dtp_ctx, \
                                         dtp_ctx->avrddl,
                                         dtp_ctx->avrRTT,
                                         dtp_ctx->bandwidth,
-                                        &news);
+                                        news);
         if(cout==-1) {
             log_debug("Failed to auto ass.Default settings.\n");
         }

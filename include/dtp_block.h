@@ -29,7 +29,7 @@ typedef struct {
     size_t dgram_num;
     // recv information
     size_t total_recv;
-} block;
+} Block;
 
 typedef struct quiche_block {
     uint64_t block_id;

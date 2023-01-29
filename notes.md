@@ -8,3 +8,8 @@ Currently, I fix this problem by:
 
 1. Add a deadline-aware finish condition to drain the block data(in fn recv_cb)
 2. Remove the metadata dgram and the metadata control flow and add all the metadata of a block in each dgram hdr
+
+## scheduler is important
+
+1. FIFO scheduler extremely increase bct
+2. TODO: RR

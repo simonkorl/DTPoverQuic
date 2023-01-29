@@ -16,7 +16,7 @@ struct dtp_config *parse_dtp_config(const char *filename, int *number) {
 
   int cfgs_len = 0;
   static int max_cfgs_len = 40000;
-  dtp_config *cfgs = malloc(max_cfgs_len * sizeof(dtp_config));
+  dtp_config *cfgs = (dtp_config *)calloc(max_cfgs_len, sizeof(dtp_config));
 
   fd = fopen(filename, "r");
   if (fd == NULL) {
