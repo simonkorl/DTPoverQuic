@@ -345,6 +345,7 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
     conn_io->blocks[i].block_hdr.deadline = conn_io->cfgs[i].deadline;
     conn_io->blocks[i].block_hdr.size     = conn_io->cfgs[i].size;
     conn_io->blocks[i].block_hdr.start_at = 0;
+    conn_io->blocks[i].block_hdr.send_at  = 0;
   }
 
   ev_init(&conn_io->timer, timeout_cb);
@@ -430,6 +431,11 @@ static void data_sender(struct ev_loop *loop, struct conn_io *conn_io) {
     for(;sending_block < conn_io->send_round; ++sending_block) {
 
       int stream_id = 4 * (sending_block + 1) + 1;
+
+      if(send_offset == 0) {
+        conn_io->blocks[sending_block].block_hdr.send_at = get_current_usec(); //? what if sent < 0?
+      }
+
       quiche_block block = conn_io->blocks[sending_block].block_hdr;
 
       int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
@@ -440,12 +446,13 @@ static void data_sender(struct ev_loop *loop, struct conn_io *conn_io) {
       log_debug("sending stream %d", stream_id);
       // TODO: what if sent < hdr_len ?
 
-      log_debug("block %d info: size: %ld, priority: %ld, deadline: %ld, started_at: %ld", 
+      log_debug("block %d info: size: %lu, priority: %lu, deadline: %lu, started_at: %lu, send_at: %lu", 
                 sending_block,
                 block.size,
                 block.priority,
                 block.deadline,
-                block.start_at
+                block.start_at,
+                block.send_at
                 );
       sent = quiche_conn_stream_send(conn_io->conn, 
                                      stream_id, 

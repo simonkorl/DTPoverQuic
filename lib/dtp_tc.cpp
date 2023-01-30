@@ -381,7 +381,6 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, Block * block){
     offsetsize_t offset = block->offset;//off set of the block
     uint64_t priority   = block->priority;
     uint64_t deadline   = block->deadline;
-    uint64_t sent_time;
     size_t send_size = 0;
 
     size_t total_data_sent = 0;
@@ -405,16 +404,16 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, Block * block){
     while(dg_counter<dgram_num){
         uint8_t* curptr = out;
         dgram_hdr dhdr = {
-            .id = id,
-            .offset = offset,
-            .len  = 0,
-            .sent_time = sent_time,
-            .size = size,
-            .priority = block->priority,
-            .deadline = block->deadline,
-            .t        = block->t,
+            .id        = id,
+            .offset    = offset,
+            .len       = 0,
+            .sent_time = getCurrentUsec(),
+            .size      = size,
+            .priority  = block->priority,
+            .deadline  = block->deadline,
+            .t         = block->t,
         };
-        log_debug("id: %x, offset: %x, sent_time: %x\n", id, offset, sent_time);
+        log_debug("id: %x, offset: %x, sent_time: %x\n", id, offset, dhdr.sent_time);
 
         uint8_t* buf_out_ptr = ((uint8_t*)buf_out)+offset;
         send_size = min(size - offset, dgram_payloadlen);
@@ -443,11 +442,11 @@ ssize_t dtpl_tc_conn_block_send(dtp_layers_ctx *dtp_ctx, Block * block){
             offset += send_size;
         }
         dg_counter++;
-        bandwidth += getCurrentUsec()-sent_time;
+        // TODO: bandwidth += getCurrentUsec()-sent_time;
     }
     log_debug("finish sending block %d: counter %d/%d, offset/size %d/%d ", block->id, dg_counter, block->dgram_num, offset, block->size);
  
-    dtp_ctx->bandwidth = (dgram_num * MAX_DATAGRAM_SIZE) / (bandwidth / 1000);//byte/ms
+    // TODO: dtp_ctx->bandwidth = (dgram_num * MAX_DATAGRAM_SIZE) / (bandwidth / 1000);//byte/ms
     //delete block from hash map and list node
 
     bmap_delete(&dtp_ctx->block_pool,id);
@@ -537,7 +536,7 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
             //todo:collected and push to queue with correspond ID,to indicate
             //the ID and timestamps via control stream
             //when the queue is not empty,send.
-            RTT_gap = RTT_gap + getCurrentUsec() - sent_time;
+            // TODO: RTT_gap = RTT_gap + getCurrentUsec() - sent_time;
             tc_ctx->recv_dgram_num++;
             // get block object
             bmap_element *e = bmap_find(tc_ctx->recv_blocks, id);
@@ -554,6 +553,9 @@ ssize_t dtpl_tc_conn_recv(dtp_layers_ctx *dtp_ctx) {
                 e = bmap_find(tc_ctx->recv_blocks, id);
             } else if(e->is_read) {
                 continue;
+            }
+            if(dhdr.offset == 0) {
+                e->block->begin_to_send = dhdr.sent_time;
             }
             // read data to block buffer
             uint8_t *block_cur_ptr = e->block->buf + dhdr.offset;

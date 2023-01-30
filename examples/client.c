@@ -328,8 +328,9 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
           // finish condition
           if(!iter->is_read && iter->block->total_recv >= iter->block->size) {
             ended_at = get_current_usec();
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
                         iter->block->id, 
+                        (ended_at - iter->block->begin_to_send) / 1000,
                         (ended_at - iter->block->t) / 1000,
                         iter->block->size,
                         iter->block->size,
@@ -344,8 +345,9 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
             log_debug("size: %lu", iter->block->size);
             // deadline condition
             ended_at = get_current_usec();
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
                         iter->id, 
+                        (ended_at - iter->block->begin_to_send) / 1000,
                         (ended_at - iter->block->t) / 1000,
                         iter->block->size,
                         iter->block->total_recv,
@@ -412,13 +414,14 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
                 perror("hdr_len != sizeof(quiche_block)");
               }
               conn_io->blocks[block_id].has_hdr = true;
-              log_debug("get hdr for %ld: %ld, %ld, %ld, %ld, %ld",
+              log_debug("get hdr for %lu: %lu, %lu, %lu, %lu, %lu, %lu",
                 block_id,
                 conn_io->blocks[block_id].block_hdr.block_id,
                 conn_io->blocks[block_id].block_hdr.size,
                 conn_io->blocks[block_id].block_hdr.priority,
                 conn_io->blocks[block_id].block_hdr.deadline,
-                conn_io->blocks[block_id].block_hdr.start_at
+                conn_io->blocks[block_id].block_hdr.start_at,
+                conn_io->blocks[block_id].block_hdr.send_at
               );
               conn_io->blocks[block_id].recv_size += recv_len - hdr_len;
             } else {
@@ -444,10 +447,12 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
               log_error("recv_size: %lu, size: %lu", conn_io->blocks[block_id].recv_size, conn_io->blocks[block_id].block_hdr.size);
               perror("recv_size != block.size");
             }
-            conn_io->blocks[block_id].bct = (ended_at - conn_io->blocks[block_id].block_hdr.start_at) / 1000;
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+            conn_io->blocks[block_id].bct = (ended_at - conn_io->blocks[block_id].block_hdr.send_at) / 1000;
+            conn_io->blocks[block_id].lifetime = (ended_at - conn_io->blocks[block_id].block_hdr.start_at) / 1000;
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
                         block_id, 
                         conn_io->blocks[block_id].bct,
+                        conn_io->blocks[block_id].lifetime,
                         conn_io->blocks[block_id].block_hdr.size,
                         conn_io->blocks[block_id].block_hdr.size,
                         conn_io->blocks[block_id].block_hdr.priority,
@@ -598,7 +603,7 @@ int main(int argc, char *argv[]) {
   dtp_ctx->tc_ctx->quic_conn = conn;
 
 
-  dump_file("block_id,bct,size,recv_len,priority,deadline,duration\n");
+  dump_file("block_id,bct,lifetime,size,recv_len,priority,deadline,duration\n");
   started_at = get_current_usec();
 
   struct conn_io *conn_io = malloc(sizeof(*conn_io));

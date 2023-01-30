@@ -15,7 +15,7 @@ typedef enum {
 
 typedef struct {
     uint8_t * buf;
-    time_t t;
+    uint64_t t; // timestamp when the block is generated
     uint64_t id;
     uint64_t size;
     uint64_t priority;
@@ -29,6 +29,8 @@ typedef struct {
     size_t dgram_num;
     // recv information
     size_t total_recv;
+    // statistic information
+    uint64_t begin_to_send; // timestamp when the block is sent to the transport layer
 } Block;
 
 typedef struct quiche_block {
@@ -39,9 +41,9 @@ typedef struct quiche_block {
     uint64_t priority;
     /// The DTP block deadline.
     uint64_t deadline;
-    /// timestamp
+    /// timestamp when the block is created
     uint64_t start_at;
-
+    /// timestamp when the block is sent to the transport protocol
     uint64_t send_at;
 } quiche_block;
 

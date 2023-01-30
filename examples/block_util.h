@@ -11,7 +11,8 @@ struct block_stats {
   size_t recv_size;
   bool has_hdr;
   bool fin;
-  int64_t bct;
+  uint64_t bct;
+  uint64_t lifetime;
   uint8_t hdr_buf[sizeof(quiche_block)];
 };
 
