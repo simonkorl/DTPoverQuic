@@ -338,23 +338,23 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
                         ended_at - started_at);
             bmap_delete(recv_blocks, iter->id);
           } 
-          // else if(!iter->is_read && 
-          //   ((get_current_usec() - iter->block->t) / 1000) >= iter->block->deadline &&
-          //   (double)iter->block->total_recv / (double) iter->block->size >= 0.9) {
-          //   log_debug("size: %lu", iter->block->size);
-          //   // deadline condition
-          //   ended_at = get_current_usec();
-          //   dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
-          //               iter->id, 
-          //               (ended_at - iter->block->t) / 1000,
-          //               iter->block->size,
-          //               iter->block->total_recv,
-          //               (double)iter->block->total_recv / iter->block->size * 100.0,
-          //               iter->block->priority,
-          //               iter->block->deadline,
-          //               ended_at - started_at);
-          //   bmap_lazy_delete(recv_blocks, iter->id);
-          // }
+          else if(!iter->is_read && 
+            ((get_current_usec() - iter->block->t) / 1000) >= iter->block->deadline &&
+            (double)iter->block->total_recv / (double) iter->block->size >= 0.9) {
+            log_debug("size: %lu", iter->block->size);
+            // deadline condition
+            ended_at = get_current_usec();
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+                        iter->id, 
+                        (ended_at - iter->block->t) / 1000,
+                        iter->block->size,
+                        iter->block->total_recv,
+                        (double)iter->block->total_recv / iter->block->size * 100.0,
+                        iter->block->priority,
+                        iter->block->deadline,
+                        ended_at - started_at);
+            bmap_lazy_delete(recv_blocks, iter->id);
+          }
         }
       }
     }
@@ -543,19 +543,20 @@ int main(int argc, char *argv[]) {
   
   quiche_config_set_application_protos(config,(uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
 
-  const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250 * 4;
+  const int dgramRecvQueueLen=MAX_BLOCK_SIZE;
   const int dgramSendQueueLen=MAX_BLOCK_SIZE / 1250;
 
   quiche_config_set_max_idle_timeout(config, 10000);
   quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
   quiche_config_set_max_send_udp_payload_size(config, MAX_DATAGRAM_SIZE);
+  quiche_config_set_max_connection_window(config, 1000000000);
   quiche_config_set_initial_max_data(config, 1000000000);
   quiche_config_set_initial_max_stream_data_uni(config, 1000000000);
   quiche_config_set_initial_max_streams_uni(config, 1000000000);
   quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
   quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
   quiche_config_set_initial_max_streams_bidi(config, 1000000000);
-  quiche_config_set_cc_algorithm(config, QUICHE_CC_CUBIC);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_BBR);
   //test on dgram
   quiche_config_enable_dgram(config, true, dgramRecvQueueLen,dgramSendQueueLen);
 

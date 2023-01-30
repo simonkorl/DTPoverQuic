@@ -41,6 +41,8 @@ typedef struct quiche_block {
     uint64_t deadline;
     /// timestamp
     uint64_t start_at;
+
+    uint64_t send_at;
 } quiche_block;
 
 #if defined(__cplusplus)

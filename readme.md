@@ -23,7 +23,31 @@ $ ./bin/server 127.0.0.1 5555 aitrans_block.txt -q -l server.log # start the ser
 $ ./bin/client 127.0.0.1 5555 127.0.0.1 6666 -q -o output.csv -l client.log # start the client
 ```
 
-### WIP: Dgram version
+### Dgram version
+
+Run the example programs without `-q` to enable dgram transmittion.
+
+```sh
+$ cmake -S. -Bbuild && cmake --build build
+$ cp aitrans_block.txt examples/cert.crt examples/cert.key examples/rootca.crt ./build
+$ cd build
+$ ./bin/server 127.0.0.1 5555 aitrans_block.txt -l server.log # start the server
+$ ./bin/client 127.0.0.1 5555 127.0.0.1 6666 -o output.csv -l client.log # start the client
+```
+
+## Traffic control script
+
+python traffic control script has some functions to emulate network conditions.
+
+See https://github.com/simonkorl/traffic_control for more information.
+
+```sh
+# start traffic control
+# set the bandwidth of nic loopback 1000mbps and add 5ms delay
+$ sudo python traffic_control.py -once -dl 0.005 -nic lo -bw 1000
+# reset
+$ sudo python traffic_control.py -r lo
+```
 
 ## Some Q&A
 
