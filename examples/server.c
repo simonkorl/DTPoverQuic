@@ -160,7 +160,7 @@ struct conn_io {
 
   UT_hash_handle hh;
 
-  quiche_block *blocks;
+  sender_block *blocks;
 };
 
 static quiche_config *config = NULL;
@@ -338,13 +338,13 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
   conn_io->cfgs = cfgs;
   conn_io->send_round = -1;
 
-  conn_io->blocks = calloc(conn_io->cfg_len, sizeof(quiche_block));
+  conn_io->blocks = calloc(conn_io->cfg_len, sizeof(sender_block));
   for(int i = 0; i < conn_io->cfg_len; ++i) {
-    conn_io->blocks[i].block_id = i;
-    conn_io->blocks[i].priority = conn_io->cfgs[i].priority;
-    conn_io->blocks[i].deadline = conn_io->cfgs[i].deadline;
-    conn_io->blocks[i].size     = conn_io->cfgs[i].size;
-    conn_io->blocks[i].start_at = 0;
+    conn_io->blocks[i].block_hdr.block_id = i;
+    conn_io->blocks[i].block_hdr.priority = conn_io->cfgs[i].priority;
+    conn_io->blocks[i].block_hdr.deadline = conn_io->cfgs[i].deadline;
+    conn_io->blocks[i].block_hdr.size     = conn_io->cfgs[i].size;
+    conn_io->blocks[i].block_hdr.start_at = 0;
   }
 
   ev_init(&conn_io->timer, timeout_cb);
@@ -365,11 +365,6 @@ static struct conn_io *create_conn(uint8_t *scid, size_t scid_len,
 
 static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
   static uint8_t out[MAX_DATAGRAM_SIZE];
-
-  if(!QUIC_ENABLE) {
-    size_t size = dtpl_tc_conn_send(conn_io->dtp_ctx);
-    log_debug("dtpl_tc_conn_send, send: %d", size);
-  }
 
   quiche_send_info send_info;
 
@@ -422,60 +417,99 @@ static void pacer_cb(struct ev_loop *loop, ev_timer *pacer, int revents) {
   flush_egress(loop, conn_io);
 }
 
+// use quiche to send data from the queue conn_io->blocks
+// try to send data if possible
+static void data_sender(struct ev_loop *loop, struct conn_io *conn_io) {
+  static uint8_t buf[MAX_BLOCK_SIZE];
+  static size_t send_offset = 0;
+  static size_t sending_block = 0;
+
+  ssize_t sent = 0;
+
+  if(QUIC_ENABLE) {
+    for(;sending_block < conn_io->send_round; ++sending_block) {
+
+      int stream_id = 4 * (sending_block + 1) + 1;
+      quiche_block block = conn_io->blocks[sending_block].block_hdr;
+
+      int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
+      if(hdr_len <= 0) {
+        log_error("hdr_len <= 0: %d", hdr_len);
+        perror("hdr_len <= 0");
+      }
+      log_debug("sending stream %d", stream_id);
+      // TODO: what if sent < hdr_len ?
+
+      log_debug("block %d info: size: %ld, priority: %ld, deadline: %ld, started_at: %ld", 
+                sending_block,
+                block.size,
+                block.priority,
+                block.deadline,
+                block.start_at
+                );
+      sent = quiche_conn_stream_send(conn_io->conn, 
+                                     stream_id, 
+                                     buf + send_offset,
+                                     hdr_len + block.size - send_offset, 
+                                     true);
+                                        
+      if(sent > 0 && sent + send_offset < block.size + hdr_len) {
+        log_debug("failed to send block %d completely: sent %zd",
+                sending_block, sent);
+        log_debug("expect: %ld, sent: %ld, offset+sent: %ld", block.size + hdr_len, sent, sent+send_offset);
+        send_offset += sent;
+        break;
+      } else if(sent == QUICHE_ERR_DONE) {
+        log_debug("failed to send block %d, done", sending_block);
+        break;
+      } else if(sent < 0) {
+        log_error("failed to send block %d : sent %zd",
+                sending_block, sent);
+        break;
+      } else {
+        // finish sending
+        conn_io->blocks[sending_block].send_finish = get_current_usec();
+        log_debug("finish sending block %d, begin: %lu, end: %lu, duration: %lu",
+          sending_block,
+          conn_io->blocks[sending_block].send_begin,
+          conn_io->blocks[sending_block].send_finish
+        );
+        send_offset = 0;
+      }
+    }
+  } else {
+    size_t size = dtpl_tc_conn_send(conn_io->dtp_ctx);
+    log_debug("dtpl_tc_conn_send, send: %d", size);
+  }
+  flush_egress(loop, conn_io);
+}
+// emulate application data generator
+// push data into sending queue to wait `quiche` to send them
 static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   struct conn_io *conn_io = w->data;
-  static size_t send_offset = 0;
   log_debug("enter sender_cb");
   if (quiche_conn_is_established(conn_io->conn)) {
     log_debug("established");
     for(;conn_io->send_round < conn_io->cfg_len; conn_io->send_round++) {
       float send_time_gap = conn_io->cfgs[conn_io->send_round].send_time_gap;
-      static uint8_t buf[MAX_BLOCK_SIZE];
 
-      // quiche_block block = {
-      //     .block_id = conn_io->send_round,
-      //     .size = conn_io->cfgs[conn_io->send_round].size,
-      //     .priority = conn_io->cfgs[conn_io->send_round].priority,
-      //     .deadline = conn_io->cfgs[conn_io->send_round].deadline,
-      //     .start_at = get_current_usec(),
-      // };
-
-      if(conn_io->blocks[conn_io->send_round].start_at == 0) {
-        conn_io->blocks[conn_io->send_round].start_at = get_current_usec();
+      if(conn_io->blocks[conn_io->send_round].block_hdr.start_at == 0) {
+        conn_io->blocks[conn_io->send_round].block_hdr.start_at = get_current_usec();
+        conn_io->blocks[conn_io->send_round].send_begin = get_current_usec();
       }
 
-      quiche_block block = conn_io->blocks[conn_io->send_round];
-
-      int stream_id = 4 * (conn_io->send_round + 1) + 1;
-      log_debug("send stream %d", stream_id);
-      ssize_t sent = 0;
+      log_debug(
+        "block %d is forming, timestamp: %lu", 
+        conn_io->send_round, 
+        conn_io->blocks[conn_io->send_round].send_begin
+      );
 
       if (QUIC_ENABLE) {
-        // printf("\n5d");
-        int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
-        assert(hdr_len > 0);
-        sent = quiche_conn_stream_send(conn_io->conn, stream_id, buf,
-                                              hdr_len + block.size - send_offset, true);
-                                        
-        log_debug("block info: size: %ld, priority: %ld, deadline: %ld, started_at: %ld", 
-                  block.size,
-                  block.priority,
-                  block.deadline,
-                  block.start_at
-                  );
-        if(sent > 0 && sent + send_offset < block.size + hdr_len) {
-          log_debug("failed to send block %d completely: sent %zd",
-                  conn_io->send_round, sent);
-          log_debug("expect: %ld, sent: %ld, offset+sent: %ld", block.size + hdr_len, sent, sent+send_offset);
-          send_offset += sent;
-          break;
-        } else if(sent < 0) {
-          log_debug("failed to send block %d : sent %zd",
-                  conn_io->send_round, sent);
-          break;
-        }
+        // pass
       } else {
         // sent = quiche_conn_block_send(conn_io->conn, stream_id, buf,block.size, true, &block);
+        quiche_block block = conn_io->blocks[conn_io->send_round].block_hdr;
+        static uint8_t buf[MAX_BLOCK_SIZE];
         int hdr_len = encode_block_hdr(buf, MAX_BLOCK_SIZE, block);
         assert(hdr_len > 0);
         log_debug("block info: size: %ld, priority: %ld, deadline: %ld, started_at: %ld", 
@@ -499,25 +533,14 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
           log_error("failed to create block, r: %d", r);
           break;
         }
-        // sent = dtpl_conn_buf_send(conn_io->dtp_ctx, buf, 
-        //                             block.size, 
-        //                             block.priority, 
-        //                             block.deadline,
-        //                             true);
-        // if(sent != block.size) {
-        //   log_debug("failed to send block %d : sent %zd, size %zd",
-        //           conn_io->send_round, sent, block.size);
-        //   break;
-        // }
       }
-      if(send_time_gap < 0.0001) {
-        send_offset = 0;
+      
+      if(send_time_gap < 0.000010) {
         continue;
       } else {
         conn_io->sender.repeat = send_time_gap;
         ev_timer_again(loop, &conn_io->sender);
         conn_io->send_round += 1;
-        send_offset = 0;
         break;
       }
     }
@@ -526,7 +549,8 @@ static void sender_cb(struct ev_loop *loop, ev_timer *w, int revents) {
     }
   }
   
-  flush_egress(loop, conn_io);
+  data_sender(loop, conn_io);
+  // flush_egress(loop, conn_io);
 }
 
 static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
@@ -720,6 +744,9 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
       }
 
       quiche_stream_iter_free(readable);
+
+      //! send data
+      data_sender(loop, conn_io);
     }
   }
 
@@ -828,7 +855,7 @@ int main(int argc, char *argv[]) {
     (uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
 
   const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250;
-  const int dgramSendQueueLen=MAX_BLOCK_SIZE / 1250;
+  const int dgramSendQueueLen=MAX_BLOCK_SIZE / 1250 * 2;
 
   quiche_config_set_max_idle_timeout(config, 10000);
   quiche_config_set_max_recv_udp_payload_size(config, MAX_DATAGRAM_SIZE);
@@ -839,7 +866,7 @@ int main(int argc, char *argv[]) {
   quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
   quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
   quiche_config_set_initial_max_streams_bidi(config, 1000000000);
-  quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_CUBIC);
   // enable dgram
   quiche_config_enable_dgram(config, true, dgramRecvQueueLen, dgramSendQueueLen); 
 

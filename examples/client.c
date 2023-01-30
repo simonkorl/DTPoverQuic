@@ -27,6 +27,8 @@
 #include "dtplayer.h"
 #include "dtp_structure.h"
 #include "block_util.h"
+
+#define min(a,b) (a < b ? a : b)
 /***** Argp configs *****/
 
 const char *argp_program_version = "dtptest-client 0.1";
@@ -335,21 +337,24 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
                         iter->block->deadline,
                         ended_at - started_at);
             bmap_delete(recv_blocks, iter->id);
-          } else if(!iter->is_read && ((get_current_usec() - iter->block->t) / 1000) >= iter->block->deadline) {
-            log_info("size: %lu", iter->block->size);
-            // deadline condition
-            ended_at = get_current_usec();
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
-                        iter->id, 
-                        (ended_at - iter->block->t) / 1000,
-                        iter->block->size,
-                        iter->block->total_recv,
-                        (double)iter->block->total_recv / iter->block->size * 100.0,
-                        iter->block->priority,
-                        iter->block->deadline,
-                        ended_at - started_at);
-            bmap_lazy_delete(recv_blocks, iter->id);
-          }
+          } 
+          // else if(!iter->is_read && 
+          //   ((get_current_usec() - iter->block->t) / 1000) >= iter->block->deadline &&
+          //   (double)iter->block->total_recv / (double) iter->block->size >= 0.9) {
+          //   log_debug("size: %lu", iter->block->size);
+          //   // deadline condition
+          //   ended_at = get_current_usec();
+          //   dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+          //               iter->id, 
+          //               (ended_at - iter->block->t) / 1000,
+          //               iter->block->size,
+          //               iter->block->total_recv,
+          //               (double)iter->block->total_recv / iter->block->size * 100.0,
+          //               iter->block->priority,
+          //               iter->block->deadline,
+          //               ended_at - started_at);
+          //   bmap_lazy_delete(recv_blocks, iter->id);
+          // }
         }
       }
     }
@@ -391,19 +396,34 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
           long block_id = ((s - 1) / 4) - 1;
           assert(conn_io->blocks);
           if(!conn_io->blocks[block_id].has_hdr) {
-            int hdr_len = decode_block_hdr(buf, MAX_BLOCK_SIZE, &conn_io->blocks[block_id].block_hdr);
-            // log_debug("hdr_len: %d", hdr_len);
-            assert(hdr_len == sizeof(quiche_block));
-            conn_io->blocks[block_id].has_hdr = true;
-            log_debug("get hdr for %ld: %ld, %ld, %ld, %ld, %ld",
-              block_id,
-              (conn_io->blocks[block_id].block_hdr.block_id - 1) / 4 - 1,
-              conn_io->blocks[block_id].block_hdr.size,
-              conn_io->blocks[block_id].block_hdr.priority,
-              conn_io->blocks[block_id].block_hdr.deadline,
-              conn_io->blocks[block_id].block_hdr.start_at
-            );
-            conn_io->blocks[block_id].recv_size += recv_len - hdr_len;
+            log_debug("recv_len: %d", recv_len);
+            if(conn_io->blocks[block_id].recv_size < sizeof(quiche_block)) {
+              log_debug("%d recv_size: %d", block_id, conn_io->blocks[block_id].recv_size);
+              memcpy(conn_io->blocks[block_id].hdr_buf + conn_io->blocks[block_id].recv_size, 
+                    buf,
+                    min(sizeof(quiche_block) - conn_io->blocks[block_id].recv_size, recv_len)
+              );
+            }
+            if(conn_io->blocks[block_id].recv_size + recv_len >= sizeof(quiche_block)) {
+              int hdr_len = decode_block_hdr(conn_io->blocks[block_id].hdr_buf, MAX_BLOCK_SIZE, &conn_io->blocks[block_id].block_hdr);
+              // log_debug("hdr_len: %d", hdr_len);
+              if(hdr_len != sizeof(quiche_block)) {
+                log_error("hdr_len %d != sizeof(quiche_block) %d", hdr_len, sizeof(quiche_block));
+                perror("hdr_len != sizeof(quiche_block)");
+              }
+              conn_io->blocks[block_id].has_hdr = true;
+              log_debug("get hdr for %ld: %ld, %ld, %ld, %ld, %ld",
+                block_id,
+                conn_io->blocks[block_id].block_hdr.block_id,
+                conn_io->blocks[block_id].block_hdr.size,
+                conn_io->blocks[block_id].block_hdr.priority,
+                conn_io->blocks[block_id].block_hdr.deadline,
+                conn_io->blocks[block_id].block_hdr.start_at
+              );
+              conn_io->blocks[block_id].recv_size += recv_len - hdr_len;
+            } else {
+              conn_io->blocks[block_id].recv_size += recv_len;
+            }
           } else {
             conn_io->blocks[block_id].recv_size += recv_len;
           }
@@ -523,7 +543,7 @@ int main(int argc, char *argv[]) {
   
   quiche_config_set_application_protos(config,(uint8_t *)"\x0ahq-interop\x05hq-29\x05hq-28\x05hq-27\x08http/0.9", 38);
 
-  const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250 * 2;
+  const int dgramRecvQueueLen=MAX_BLOCK_SIZE / 1250 * 4;
   const int dgramSendQueueLen=MAX_BLOCK_SIZE / 1250;
 
   quiche_config_set_max_idle_timeout(config, 10000);
@@ -535,7 +555,7 @@ int main(int argc, char *argv[]) {
   quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
   quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
   quiche_config_set_initial_max_streams_bidi(config, 1000000000);
-  quiche_config_set_cc_algorithm(config, QUICHE_CC_RENO);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_CUBIC);
   //test on dgram
   quiche_config_enable_dgram(config, true, dgramRecvQueueLen,dgramSendQueueLen);
 
