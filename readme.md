@@ -43,8 +43,8 @@ See https://github.com/simonkorl/traffic_control for more information.
 
 ```sh
 # start traffic control
-# set the bandwidth of nic loopback 1000mbps and add 5ms delay
-$ sudo python traffic_control.py -once -dl 0.005 -nic lo -bw 1000
+# set the bandwidth of nic loopback 1000mbps, add 5ms delay 0.01% loss and 10% reordering
+$ sudo python traffic_control.py -once -dl 0.005 -nic lo -bw 1000 -loss 0.01 -re 10%
 # reset
 $ sudo python traffic_control.py -r lo
 ```
