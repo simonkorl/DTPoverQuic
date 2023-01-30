@@ -110,7 +110,7 @@ int dtp_tcontroler_init(dtp_layers_ctx* dtp_ctx)
             tc_ctx->recv_dgram_num=0;
             tc_ctx->peer_RTT=0;
         
-            tc_ctx->control_stream_id=8;
+            tc_ctx->control_stream_id = 1;
             tc_ctx->transport_mode = (dtp_trans_mode) 0;
 
             tc_ctx->recv_blocks = NULL;
@@ -317,7 +317,7 @@ static uint8_t *gen_cid(uint8_t *cid, size_t cid_len) {
 
 //send the feeback of current network
 //lost pkt
-size_t dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,
+ssize_t dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,
     uint8_t * buf, size_t buflen,
     bool final_flow_data) {
     if (quiche_conn_is_established(tc_ctx->quic_conn)) {
@@ -336,11 +336,11 @@ size_t dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,
 }
 
 //Check and Read the feedback data from peer .
-size_t dtp_tc_control_flow_recv(dtp_tc_ctx * tc_ctx, uint8_t *out, size_t buf_len, bool *final_flow_data){
+ssize_t dtp_tc_control_flow_recv(dtp_tc_ctx * tc_ctx, uint8_t *out, size_t buf_len, bool *final_flow_data){
     uint64_t s = tc_ctx->control_stream_id;
     if(quiche_conn_stream_readable(tc_ctx->quic_conn,s)) {
         ssize_t recv_len =
-            quiche_conn_stream_recv(tc_ctx->quic_conn, s, out, sizeof(buf_len), final_flow_data);
+            quiche_conn_stream_recv(tc_ctx->quic_conn, s, out, buf_len, final_flow_data);
         if (recv_len > 0){
             log_debug("Control stream: recv %ld", recv_len);
             return recv_len;

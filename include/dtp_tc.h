@@ -79,12 +79,12 @@ static uint8_t *gen_cid(uint8_t *cid, size_t cid_len) ;
 // int dtp_tc_conn_validate(dtp_tc_ctx * tc_ctx,uint8_t * buf,struct sockaddr_storage * peer_addr,socklen_t peer_addr_len,int socket);//todo ：如何控制粒度 
 //send the feeback of current network
 //lost pkt
-size_t dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,
+ssize_t dtp_tc_control_flow_send(dtp_tc_ctx * tc_ctx,
                 uint8_t * buf, size_t buflen, 
                 bool final_flow_data);
 
 //Check if there is feedback data from control stream
-size_t dtp_tc_control_flow_recv(dtp_tc_ctx * tc_ctx, uint8_t *out, size_t buf_len, bool *final_flow_data);
+ssize_t dtp_tc_control_flow_recv(dtp_tc_ctx * tc_ctx, uint8_t *out, size_t buf_len, bool *final_flow_data);
 
 uint64_t dtp_conn_timeout_as_nanos(dtp_tc_ctx *tc_ctx);
 

@@ -324,20 +324,23 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
       if(HASH_COUNT(conn_io->dtp_ctx->tc_ctx->recv_blocks)) {
         bmap_element **recv_blocks = &conn_io->dtp_ctx->tc_ctx->recv_blocks;
         bmap_element *iter, *tmp;
+        // TODO: beter iter
         HASH_ITER(hh, *recv_blocks, iter, tmp) {
           // finish condition
           if(!iter->is_read && iter->block->total_recv >= iter->block->size) {
             ended_at = get_current_usec();
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lf, %lu, %lu, %lu\n", 
                         iter->block->id, 
                         (ended_at - iter->block->begin_to_send) / 1000,
                         (ended_at - iter->block->t) / 1000,
                         iter->block->size,
                         iter->block->size,
+                        1.0,
                         iter->block->priority,
                         iter->block->deadline,
                         ended_at - started_at);
             bmap_delete(recv_blocks, iter->id);
+            conn_io->blocks_len += 1;
           } 
           else if(!iter->is_read && 
             ((get_current_usec() - iter->block->t) / 1000) >= iter->block->deadline &&
@@ -345,18 +348,22 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
             log_debug("size: %lu", iter->block->size);
             // deadline condition
             ended_at = get_current_usec();
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lf, %lu, %lu, %lu\n", 
                         iter->id, 
                         (ended_at - iter->block->begin_to_send) / 1000,
                         (ended_at - iter->block->t) / 1000,
                         iter->block->size,
                         iter->block->total_recv,
-                        (double)iter->block->total_recv / iter->block->size * 100.0,
+                        (double)iter->block->total_recv / iter->block->size,
                         iter->block->priority,
                         iter->block->deadline,
                         ended_at - started_at);
             bmap_lazy_delete(recv_blocks, iter->id);
+            conn_io->blocks_len += 1;
           }
+        }
+        if(conn_io->cfg_len > 0 && conn_io->blocks_len >= conn_io->cfg_len) {
+          quiche_conn_close(conn_io->conn, true, 0, "done", sizeof("done"));
         }
       }
     }
@@ -364,6 +371,24 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
     uint64_t s = 0;
     quiche_stream_iter *readable = quiche_conn_readable(conn_io->conn);
     log_trace("after readable, readable: %p", readable);
+
+    // control flow
+    if(!QUIC_ENABLE) {
+      if(conn_io->cfg_len == 0) {
+        bool fin = false;
+        ssize_t recv_len = dtp_tc_control_flow_recv(
+          conn_io->dtp_ctx->tc_ctx,
+          buf,
+          sizeof(buf),
+          &fin
+        );
+        if(recv_len >= (ssize_t)sizeof(int)) {
+          //? what if recv_len < sizeof(int) ?
+          memcpy(&conn_io->cfg_len, buf, sizeof(int));
+          conn_io->blocks_len = 0;
+        }
+      }
+    }
 
     while (quiche_stream_iter_next(readable, &s)) {
       log_debug("stream %" PRIu64 " is readable", s);
@@ -449,12 +474,13 @@ static void recv_cb(EV_P_ ev_io *w, int revents) {
             }
             conn_io->blocks[block_id].bct = (ended_at - conn_io->blocks[block_id].block_hdr.send_at) / 1000;
             conn_io->blocks[block_id].lifetime = (ended_at - conn_io->blocks[block_id].block_hdr.start_at) / 1000;
-            dump_file("%lu, %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", 
+            dump_file("%lu, %lu, %lu, %lu, %lu, %lf, %lu, %lu, %lu\n", 
                         block_id, 
                         conn_io->blocks[block_id].bct,
                         conn_io->blocks[block_id].lifetime,
                         conn_io->blocks[block_id].block_hdr.size,
                         conn_io->blocks[block_id].block_hdr.size,
+                        1.0, // complete
                         conn_io->blocks[block_id].block_hdr.priority,
                         conn_io->blocks[block_id].block_hdr.deadline,
                         ended_at - started_at);
@@ -561,7 +587,7 @@ int main(int argc, char *argv[]) {
   quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
   quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
   quiche_config_set_initial_max_streams_bidi(config, 1000000000);
-  quiche_config_set_cc_algorithm(config, QUICHE_CC_BBR);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_CUBIC);
   //test on dgram
   quiche_config_enable_dgram(config, true, dgramRecvQueueLen,dgramSendQueueLen);
 
@@ -603,10 +629,10 @@ int main(int argc, char *argv[]) {
   dtp_ctx->tc_ctx->quic_conn = conn;
 
 
-  dump_file("block_id,bct,lifetime,size,recv_len,priority,deadline,duration\n");
+  dump_file("block_id,bct,lifetime,size,recv_len,complete,priority,deadline,duration\n");
   started_at = get_current_usec();
 
-  struct conn_io *conn_io = malloc(sizeof(*conn_io));
+  struct conn_io *conn_io = calloc(1, sizeof(*conn_io));
   if (conn_io == NULL) {
     log_error("failed to allocate connection IO");
     return -1;

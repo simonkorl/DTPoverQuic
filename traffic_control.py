@@ -87,6 +87,10 @@ def tc_easy_bandwith(**kwargs):
     mx_delay_ms = float(kwargs['max_delay'])
     mn_delay_ms = float(kwargs['min_delay'])
 
+    # reorder
+    reorder_rate = 0 if not kwargs['reorder'] else float(kwargs['reorder'])
+    reorder_parser = "" if reorder_rate <= 0.000001 else "reorder {0}%".format(reorder_rate)
+
     if kwargs['delay'] == None:
         delay_ms = random.random() * (mx_delay_ms - mn_delay_ms) + mn_delay_ms
     else:
@@ -94,8 +98,8 @@ def tc_easy_bandwith(**kwargs):
         if delay_ms <= 0.000001:
             return
 
-    os.system('tc qdisc {3} dev {0} parent 1:11 handle 10: netem delay {1}ms {2}'.format(nic_name, delay_ms, loss_parser, op_mode))
-    print("Time : {2}, {3} nic {0}, delay_time to {1}ms with loss rate {4}%".format(nic_name, delay_ms, get_now_time(), op_mode, loss_rate))
+    os.system('tc qdisc {3} dev {0} parent 1:11 handle 10: netem delay {1}ms {2} {4}'.format(nic_name, delay_ms, loss_parser, op_mode, reorder_parser))
+    print("Time : {2}, {3} nic {0}, delay_time to {1}ms with loss rate {4}% reorder {5}%".format(nic_name, delay_ms, get_now_time(), op_mode, loss_rate, reorder_rate))
 
 
 def load_file(**kwargs):
@@ -246,6 +250,9 @@ def init_argparse():
     parser.add_argument("-loss", "--loss_rate",
                         type=float,
                         help="The value of loss_rate you want to change in netem")
+    parser.add_argument("-re", "--reorder",
+                        type=float,
+                        help="The value of reorder you want to change in netem, a percentage")
 
     parser.add_argument("-r", "--reset",
                         metavar="ETHERNET",

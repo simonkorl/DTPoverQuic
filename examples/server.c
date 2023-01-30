@@ -444,7 +444,6 @@ static void data_sender(struct ev_loop *loop, struct conn_io *conn_io) {
         perror("hdr_len <= 0");
       }
       log_debug("sending stream %d", stream_id);
-      // TODO: what if sent < hdr_len ?
 
       log_debug("block %d info: size: %lu, priority: %lu, deadline: %lu, started_at: %lu, send_at: %lu", 
                 sending_block,
@@ -713,7 +712,9 @@ static void recv_cb(struct ev_loop *loop, ev_io *w, int revents) {
           memcpy(out, &conn_io->cfg_len, sizeof(int));
           quiche_conn_stream_send(conn_io->conn, QUIC_INFO_STREAM, out, sizeof(int), false);
         } else {
-          // TODO
+          memcpy(out, &conn_io->cfg_len, sizeof(int));
+          dtp_tc_control_flow_send(conn_io->dtp_ctx->tc_ctx,
+            out, sizeof(int), false);
         }
       }
 
@@ -874,7 +875,7 @@ int main(int argc, char *argv[]) {
   quiche_config_set_initial_max_stream_data_bidi_local(config, 1000000000);
   quiche_config_set_initial_max_stream_data_bidi_remote(config, 1000000000);
   quiche_config_set_initial_max_streams_bidi(config, 1000000000);
-  quiche_config_set_cc_algorithm(config, QUICHE_CC_BBR);
+  quiche_config_set_cc_algorithm(config, QUICHE_CC_CUBIC);
   // enable dgram
   quiche_config_enable_dgram(config, true, dgramRecvQueueLen, dgramSendQueueLen); 
 
